@@ -78,4 +78,14 @@ A opção do Hub continua sendo salva nas configurações, mas a interface agora
 
 A inversão deve ocorrer numa camada controlada pelo Hub e efetivamente consumida pelo jogo, sem modificar XMLs/estado do LGS e sem exigir que o LGS esteja instalado ou em execução. Antes de escolher a arquitetura, é necessário determinar uma via que preserve o uso do volante físico — em especial os comandos de Force Feedback — enquanto altera apenas a direção dos eixos de pedal. A leitura HID feita pelo processo do Hub e a transformação dos valores apenas na sua própria interface não alteram os eixos que o MAME recebe.
 
-Próxima investigação: avaliar tecnicamente as opções independentes de exposição/interceptação de joystick no Windows (por exemplo, dispositivo virtual e roteamento de entrada/Force Feedback), seus requisitos de driver e compatibilidade com a proteção de integridade de memória. Não desativar as proteções de segurança do Windows e não assumir que uma solução funciona até validá-la no MAME.
+### Atualização técnica — adaptador DirectInput (2026-10-20)
+
+A árvore do repositório contém a fonte do proxy em `dinput8-proxy/src`. Foi adicionado um primeiro adaptador nativo em `pedal_inversion.h` e a chamada em `IDirectInputDevice8::GetDeviceState`: ele pode transformar valores no buffer retornado pela API, usando flags e offsets publicados por perfil no Registro. O proxy existente continua encaminhando as chamadas ao objeto DirectInput real e mantendo o caminho de FFB/LUT.
+
+Este é um incremento de infraestrutura, **não uma entrega funcional validada**:
+- os offsets de pedal estão desativados por padrão (`-1`) e ainda não há controles de mapeamento na UI;
+- índices SDL não equivalem a offsets em bytes no buffer DirectInput;
+- o MAME pode utilizar outro backend e não passar por esse hook;
+- foi adicionado build CMake/CI para x86 e x64, mas o build e o teste no jogo precisam ser confirmados pelas execuções do GitHub Actions e por teste real.
+
+A próxima etapa é instrumentar o `DIDATAFORMAT` efetivamente solicitado pelo jogo, mapear cada pedal ao offset e aos limites reais, expor esse mapeamento por perfil e só então validar no MAME. Não desativar Integridade da Memória/Isolamento do Núcleo e não anunciar sucesso antes de observar o eixo alterado dentro do jogo.
