@@ -187,3 +187,25 @@ A análise do JSON revelou que a chamada de metadados `RIDI_DEVICEINFO` não est
 Foram analisadas duas novas capturas de aproximadamente 60 segundos. O script agrupou 4.058 e 4.108 relatórios, respectivamente, no caminho HID que contém `VID_046D&PID_C29B`; todos os relatórios tinham 13 bytes e não foram reportados erros. Vários bytes variam, mas ainda não podem ser associados a eixos ou botões sem interpretar o descritor HID.
 
 O relatório detalhado e as limitações estão em [Análise das capturas Raw Input do G27 — 2026-10-20](G27_RAW_INPUT_CAPTURE_20261020.md). Próxima etapa: recuperar o descritor HID e decodificar os campos antes de tentar identificar os bytes de cada eixo/pedal.
+
+
+## Relato de teste no MAME: inversão não observada (2026-10-20)
+
+O usuário informa que, nos testes anteriores, a inversão dos pedais não ocorreu no MAME, apesar das alterações no perfil XML. Portanto, a inversão pelo perfil deve ser tratada como **não confirmada / aparentemente ineficaz no cenário testado**, e não como funcionalidade corrigida.
+
+### Interpretação
+
+- A presença de `Sign="-1"` no XML não comprova que o LGS carregou o perfil do MAME ou aplicou a opção.
+- As capturas SDL e Raw Input registram entrada observada por APIs diferentes; não provam qual valor o MAME recebe após o processamento do LGS/driver.
+- Ainda não há evidência que identifique o mecanismo interno usado pelo LGS para aplicar `AxisDynamics` ou a inversão.
+
+### Próximo experimento controlado
+
+1. Registrar o estado original do perfil XML e confirmar no LGS qual perfil está ativo para o executável do MAME.
+2. No MAME, anotar o comportamento do eixo/pedal sem alterar outras opções.
+3. Alterar apenas um `Sign` no perfil, salvar, reabrir o LGS e confirmar se o perfil permanece ativo.
+4. Repetir exatamente o mesmo teste no MAME.
+5. Comparar com o painel de controladores do Windows e com o diagnóstico do Hub, anotando se a inversão aparece em alguma camada.
+6. Se não houver mudança, não continuar alterando sinais aleatoriamente: investigar como o LGS aplica o perfil (logs, diferenças de configuração e interfaces documentadas) e avaliar uma solução de entrada que o MAME realmente consuma.
+
+Não afirmar que a inversão foi aplicada pelo driver até que um teste isole essa camada. A observação atual é um relato do usuário, não uma reprodução independente.
