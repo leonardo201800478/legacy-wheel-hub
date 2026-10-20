@@ -25,7 +25,7 @@ A transformação matemática é `min + max - valor`. O proxy identifica os offs
 
 ## Limitações que ainda impedem considerar a função concluída
 
-1. **O mapeamento de offsets ainda não está disponível na interface gráfica.** Os offsets ficam desativados por padrão. Não altere-os por tentativa: é preciso identificar o formato de dados usado pelo jogo e o offset exato de cada pedal.
+1. **A seleção de eixo é manual por jogo.** No menu de contexto de cada barra de pedal, selecione o eixo DirectInput correspondente ao pedal conforme a configuração de controles do jogo. A opção inicia como “Não mapeado”; não presuma que X/Y/Z correspondam sempre a acelerador/freio/embreagem.
 2. A interceptação só alcança jogos que chamam `DirectInput8Create` e leem os estados por `IDirectInputDevice8::GetDeviceState` através do proxy. Jogos que usam Raw Input, SDL ou outra API podem ignorar essa camada.
 3. O proxy precisa ser reconstruído e empacotado para a arquitetura do jogo (x86 ou x64). A presença de `CMakeLists.txt` não significa que a DLL já tenha sido compilada nem distribuída.
 4. O comportamento precisa ser validado no MAME e em outro jogo DirectInput, com um pedal por vez, flags ligadas/desligadas, perfil correto e FFB funcionando. Essa validação ainda não foi executada nesta alteração.
