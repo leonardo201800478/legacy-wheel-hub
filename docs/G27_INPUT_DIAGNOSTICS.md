@@ -211,3 +211,41 @@ O usuário esclareceu que o MAME já está configurado para receber a inversão 
 5. Só depois de identificar a diferença, corrigir a implementação e validar no MAME. Se o LGS depender de estado ou de uma interface não representada no XML, documentar essa dependência e avaliar uma via alternativa que o MAME efetivamente consuma.
 
 O relato do usuário estabelece o resultado funcional do teste; a causa interna ainda precisa ser investigada. Nenhuma conclusão sobre o mecanismo do driver deve ser apresentada como comprovada sem evidência adicional.
+
+
+## Registro automático de diagnóstico da inversão (Legacy Wheel Hub)
+
+Desde o commit de diagnóstico, o aplicativo registra automaticamente uma trilha local em segundo plano ao iniciar. Não é necessário abrir a ferramenta Raw Input separada nem executar comandos.
+
+**Local padrão do log:**
+
+```text
+%LOCALAPPDATA%\Legacy Wheel Hub\diagnostics\pedal_inversion_AAAAMMDD_HHMMSS.jsonl
+```
+
+Cada inicialização gera um arquivo JSON Lines independente. O logger não altera o driver, o Registro, o perfil LGS nem a entrada do volante; ele observa o inventário HID e os relatórios que o próprio Legacy Wheel Hub já lê.
+
+### O que é registrado
+
+- Início/fim da sessão, versão do aplicativo, versão do Python e executável.
+- Inventário HID Logitech com VID/PID, nome do fabricante/produto e metadados de interface disponíveis; caminhos HID e números de série não são incluídos.
+- Perfil de hardware identificado, índices de bytes usados pelo Hub para acelerador/freio/embreagem e valor da opção interna `pedal_invert`.
+- Configuração dos perfis do Hub: flags `invert_throttle`, `invert_brake`, `invert_clutch`, `driver_pedal_inversion_configured` e somente o nome do executável associado.
+- Relatórios de entrada que mudam, limitados a aproximadamente 20 amostras por segundo, com bytes brutos em hexadecimal e os valores de direção/pedais calculados pelo Hub.
+- Conexões, desconexões detectadas, erros de abertura/leitura HID e mudanças de perfil de jogo observadas pelo aplicativo.
+
+### Como usar para investigar os pedais
+
+1. Abra o Legacy Wheel Hub normalmente e deixe-o conectado ao G27.
+2. Sem mudar outras configurações, mova a direção e pressione separadamente acelerador, freio e embreagem, primeiro em repouso e depois até o fim do curso.
+3. Feche o aplicativo normalmente para registrar o fim da sessão.
+4. Abra o arquivo mais recente na pasta indicada e compare eventos `input_sample`: `raw_report_hex`/ `raw_bytes` mostram o relatório lido pelo Hub; `throttle_value`, `brake_value` e `clutch_value` mostram os valores após a interpretação atual do Hub.
+5. Compare uma sessão com a configuração original funcional do LGS e outra com a alteração do Legacy Wheel Hub, alterando uma única variável por vez.
+
+### Limites importantes
+
+- Este log mostra a entrada HID que o Legacy Wheel Hub lê e como o próprio Hub a interpreta. **Não mostra diretamente o valor final recebido pelo MAME** nem prova que o LGS aplicou uma transformação.
+- O logger não captura teclas, conteúdo de outros aplicativos, tráfego de rede ou relatórios HID de saída/FFB.
+- O registro é automático e local. Antes de compartilhar, revise o arquivo. Ele contém amostras de entrada do volante e nomes de perfis/executáveis, embora não grave caminhos completos nem números de série.
+- Se o arquivo não for criado, verifique permissões de gravação em `%LOCALAPPDATA%\Legacy Wheel Hub\diagnostics`. Falhas de diagnóstico são tratadas para não impedir a inicialização do aplicativo.
+
