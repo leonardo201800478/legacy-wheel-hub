@@ -73,3 +73,19 @@ O Kaspersky informou que excluiu os quatro arquivos. A duplicação entre `asset
 ## Estado
 
 **Cadeia de empacotamento: não rastreável com as evidências públicas atuais.** A auditoria localiza o ponto em que a aplicação consome os assets e o workflow que compila a proxy, mas falta o elo entre a compilação e os binários entregues aos usuários.
+
+
+## Atualização de CI após a auditoria
+
+Em 2026-10-20, o workflow `.github/workflows/build-dinput8-proxy.yml` foi atualizado para que cada artefato x86/x64 inclua `provenance.json` com:
+- commit de origem;
+- arquitetura solicitada;
+- arquitetura PE validada no cabeçalho;
+- tamanho do arquivo;
+- hash SHA-256.
+
+A etapa falha se a DLL não existir, se o cabeçalho MZ/PE estiver inválido ou se a arquitetura PE não corresponder à matriz do build.
+
+Commit da alteração do workflow: `0a1fd2926630a41f7dca4f5022e0f38813f92eae`.
+
+**Limitação:** o workflow foi atualizado no repositório, mas sua execução pós-alteração e a geração real dos artefatos ainda precisam ser confirmadas em GitHub Actions. Esse ajuste melhora a rastreabilidade dos binários produzidos pelo CI, mas não fecha, sozinho, a cadeia do instalador original: ainda falta integrar os artefatos verificados ao processo de empacotamento do aplicativo.
