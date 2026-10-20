@@ -12,6 +12,18 @@ Esta auditoria é documental/estática. Não houve acesso aos arquivos binários
 
 O endpoint público de Releases consultado retornou uma lista vazia no momento da revisão. Portanto, o README orienta baixar `LegacyWheelHub_Setup.exe` de Releases, mas não foi possível recuperar por essa via um instalador nem os binários que ele contém.
 
+## Descoberta adicional: release do repositório upstream
+
+O metadata do fork identifica `Sadooo27/legacy-wheel-hub` como repositório pai. A release pública upstream `v1.1.5` foi publicada em 2026-09-07 e contém o asset `LegacyWheelHub_Setup.exe`, com 37.676.297 bytes. O GitHub fornece para esse asset o digest `sha256:6209121ce84d2761f0e73ca2b18403efcb75fffe1919cdaef56d02f80a9d69bc`.
+
+- Release: https://github.com/Sadooo27/legacy-wheel-hub/releases/tag/v1.1.5
+- Commit associado à tag: `971e17c0237c7c5699ba5003747062b3b24185ad`
+- SHA-256 publicado no metadata do asset: `6209121ce84d2761f0e73ca2b18403efcb75fffe1919cdaef56d02f80a9d69bc`
+
+A comparação textual de `dinput8-proxy/src/dllmain.cpp` entre a tag upstream `v1.1.5` e a branch `main` do fork retornou o mesmo blob SHA `75aa76327924abf0ea02e9d374e2c92d8072309f`. Isso mostra que esse arquivo-fonte específico é idêntico nos dois pontos, mas não prova que o instalador da release contenha as DLLs detectadas, nem que tenha sido o instalador usado pelo usuário. A aplicação Python do fork divergiu da versão upstream, e o conteúdo do binário do instalador não foi extraído nem executado nesta auditoria.
+
+**Interpretação:** agora existe uma release upstream verificável como candidata de comparação, mas a cadeia para o pacote instalado continua sem confirmação. Não se deve presumir que o digest do instalador upstream corresponda ao arquivo baixado ou executado no computador do usuário sem calcular o hash desse arquivo específico e compará-lo com a fonte de download.
+
 ## Evidências do repositório
 
 ### 1. A aplicação carrega os assets de um diretório empacotado
