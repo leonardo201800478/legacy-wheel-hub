@@ -1,0 +1,36 @@
+{
+  "theme": "dark",
+  "language": "en",
+  "last_device": "G27",
+  "auto_load": true,
+  "combined_pedals": false,
+  "minimize_to_tray": false,
+  "check_updates": true,
+  "auto_game_profile": true,
+  "last_update_check": 1792466213.5858035,
+  "update_seen": "",
+  "button_numbers": false,
+  "test_device": null,
+  "win_w": 1366,
+  "win_h": 792,
+  "last_tab": "wheel",
+  "ui_scale": 100,
+  "profiles": {
+    "Global": {
+      "angle": 900,
+      "di_gain": 101,
+      "di_spring": 0,
+      "di_damper": 0,
+      "di_center": 0,
+      "di_ramp": 7,
+      "di_persist": false,
+      "exe_path": "",
+      "logo_exe": "",
+      "lut_file": "",
+      "lut_enabled": false
+    }
+  },
+  "selected_profile": "Global",
+  "win_x": 341,
+  "win_y": 156
+}

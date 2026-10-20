@@ -15,7 +15,14 @@ FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
 You should have received a copy of the GNU General Public License along with
 this program. If not, see <https://www.gnu.org/licenses/>.
 """
-import sys, os, json, math, time, threading, struct, copy
+import copy
+import json
+import math
+import os
+import struct
+import sys
+import threading
+import time
 
 try:
     import hid
@@ -65,12 +72,46 @@ try:
 except ImportError:
     winreg = None
 
-from PySide6.QtCore import Qt, QTimer, QThread, QRectF, QPointF, Signal, QEvent, QSize, QPropertyAnimation, QEasingCurve, qInstallMessageHandler, QFileInfo
-from PySide6.QtGui import QPainter, QColor, QPixmap, QPolygonF, QFont, QPen, QIcon, QAction, QImage, QPainterPath, QFontMetrics
-from PySide6.QtWidgets import (QApplication, QWidget, QHBoxLayout, QVBoxLayout, QGridLayout,
-                               QFrame, QSizePolicy, QScrollArea, QSystemTrayIcon, QMenu,
-                               QStackedWidget, QButtonGroup, QSplitter, QFileDialog,
-                               QLabel)
+from PySide6.QtCore import (
+    QEvent,
+    QFileInfo,
+    QPointF,
+    QRectF,
+    QSize,
+    Qt,
+    QThread,
+    QTimer,
+    Signal,
+    qInstallMessageHandler,
+)
+from PySide6.QtGui import (
+    QAction,
+    QColor,
+    QFont,
+    QFontMetrics,
+    QIcon,
+    QImage,
+    QPainter,
+    QPainterPath,
+    QPen,
+    QPixmap,
+    QPolygonF,
+)
+from PySide6.QtWidgets import (
+    QApplication,
+    QFileDialog,
+    QFrame,
+    QGridLayout,
+    QHBoxLayout,
+    QLabel,
+    QMenu,
+    QScrollArea,
+    QSizePolicy,
+    QStackedWidget,
+    QSystemTrayIcon,
+    QVBoxLayout,
+    QWidget,
+)
 
 # QFileIconProvider moved between QtWidgets and QtGui across Qt6/PySide6
 # releases; import defensively so a wrong location can never crash startup.
@@ -82,11 +123,30 @@ except Exception:
     except Exception:
         QFileIconProvider = None
 
-from qfluentwidgets import (FluentWindow, NavigationItemPosition, setTheme, Theme, setThemeColor,
-                            FluentIcon as FIF, PushButton, PrimaryPushButton, Slider, LineEdit,
-                            BodyLabel, StrongBodyLabel, TitleLabel, SubtitleLabel, CaptionLabel,
-                            CardWidget, CheckBox, InfoBar, InfoBarPosition, isDarkTheme,
-                            ComboBox, TransparentToolButton, ToolButton, Pivot, TransparentPushButton)
+from qfluentwidgets import (
+    BodyLabel,
+    CaptionLabel,
+    CheckBox,
+    ComboBox,
+    InfoBar,
+    InfoBarPosition,
+    LineEdit,
+    Pivot,
+    PrimaryPushButton,
+    PushButton,
+    Slider,
+    StrongBodyLabel,
+    SubtitleLabel,
+    Theme,
+    TitleLabel,
+    ToolButton,
+    TransparentPushButton,
+    TransparentToolButton,
+    isDarkTheme,
+    setTheme,
+    setThemeColor,
+)
+from qfluentwidgets import FluentIcon as FIF
 from qframelesswindow import FramelessWindow, TitleBar
 
 try:
@@ -259,11 +319,10 @@ def _startup_command():
     # sign in is intrusive for something that just sits there configuring a
     # wheel, so a logon start goes to the tray when the user has enabled it.
     if getattr(sys, "frozen", False):
-        return '"%s" --tray' % sys.executable
+        return f'"{sys.executable}" --tray'
     py = sys.executable
     pyw = os.path.join(os.path.dirname(py), "pythonw.exe")
-    return '"%s" "%s" --tray' % (pyw if os.path.isfile(pyw) else py,
-                                 os.path.abspath(__file__))
+    return f'"{pyw if os.path.isfile(pyw) else py}" "{os.path.abspath(__file__)}" --tray'
 
 
 def startup_enabled():
@@ -325,8 +384,10 @@ def set_active_lut(path, exe_path=None):
             # Per-game only. Writing the shared legacy key here as well would
             # let each profile in _publish()'s loop overwrite it in turn, so a
             # proxy polling mid-loop could momentarily read another game's LUT.
-            gkey = winreg.CreateKey(winreg.HKEY_CURRENT_USER,
-                                    r"Software\LegacyWheelHub\Games\%s" % _proxy_game_key(exe_path))
+            gkey = winreg.CreateKey(
+                winreg.HKEY_CURRENT_USER,
+                rf"Software\LegacyWheelHub\Games\{_proxy_game_key(exe_path)}",
+            )
             winreg.SetValueEx(gkey, "ActiveLut", 0, winreg.REG_SZ, path or "")
             winreg.SetValueEx(gkey, "LogDir", 0, winreg.REG_SZ, _lut_dir())
             winreg.CloseKey(gkey)
@@ -477,7 +538,7 @@ def resolve_game_exe(exe_path):
                     # prefer the one whose name matches the launcher/project name
                     # (JDM.exe -> JDM-Win64-Shipping.exe), else the first sorted.
                     pref = [f for f in hits if f.lower().startswith(stem)]
-                    return os.path.join(bindir, sorted(pref or hits)[0])
+                    return os.path.join(bindir, min(pref or hits))
         return None
 
     # 1) root/Binaries/...
@@ -628,7 +689,7 @@ def windows_accent_color():
         val, _ = winreg.QueryValueEx(k, "AccentColor")
         winreg.CloseKey(k)
         r = val & 0xFF; g = (val >> 8) & 0xFF; b = (val >> 16) & 0xFF
-        return "#%02x%02x%02x" % (r, g, b)
+        return f"#{r:02x}{g:02x}{b:02x}"
     except Exception:
         return ACCENT_FALLBACK
 
@@ -688,6 +749,7 @@ LANG = {
         "input.mode_numbers": "Show button numbers", "input.mode_names": "Show button names",
         "ui.autogame": "Auto-switch by game", "ui.autogame_h": "Applies the profile whose game .exe is running. Falls back to Global when none is.", "game.detected": "Game detected", "game.detected_body": "{0} preset applied.",
         "set.startup": "Start with Windows", "set.startup_h": "Launches the app when you sign in. Off by default.",
+        "set.pedals": "Combined pedals (accelerator + brake)", "set.pedals_h": "Reports accelerator and brake on one shared axis for older games. Applies globally to this wheel; restart games after changing it.",
         "set.updates_sec": "UPDATES", "set.updates": "Check for updates on startup", "set.updates_h": "Checks GitHub once a day. Nothing is installed automatically.",
         "set.check_now": "Check now", "set.checking": "Checking\u2026",
         "upd.available": "Update available", "upd.available_body": "Version {0} is available.", "upd.open": "Download",
@@ -766,10 +828,10 @@ LANG = {
         "prof.exe_hint": "For UE launcher games, pick the real ...-Shipping.exe if it isn't found automatically.",
         "prof.logo": "Icon (from an .exe)", "prof.logo_pick": "Choose icon\u2026",
         "prof.exe_pick": "Choose game\u2026", "prof.name_lbl": "Profile name",
-        "proxy.installed": "Proxy installed", "proxy.removed": "Proxy removed",
+        "proxy.installed": "Proxy installed",
         "proxy.installed_body": "dinput8.dll placed next to the game.",
         "proxy.locked": "Proxy disabled", "proxy.locked_body": "Will be cleaned up when the game closes.",
-        "proxy.removed": "Proxy removed", "proxy.removed_body": "dinput8.dll removed from the game folder.",
+        "proxy.removed_body": "dinput8.dll removed from the game folder.",
         "proxy.err_noexe": "Game exe not found.", "proxy.err_arch": "Unsupported architecture.",
         "proxy.err_asset": "Bundled proxy DLL missing (assets/proxy).",
         "proxy.err_write": "Could not write DLL (is the game running? folder writable?).",
@@ -803,6 +865,7 @@ LANG = {
         "input.mode_numbers": "Buton numaralarını göster", "input.mode_names": "Buton adlarını göster",
         "ui.autogame": "Oyuna göre geç", "ui.autogame_h": "Çalışan oyunun .exe dosyasına ait profili uygular. Hiçbiri çalışmıyorsa Global'e döner.", "game.detected": "Oyun algılandı", "game.detected_body": "{0} preseti uygulandı.",
         "set.startup": "Windows ile başlat", "set.startup_h": "Oturum açtığınızda uygulamayı başlatır. Varsayılan olarak kapalıdır.",
+        "set.pedals": "Birleşik pedallar (gaz + fren)", "set.pedals_h": "Eski oyunlar için gaz ve freni tek eksende bildirir. Bu direksiyon için genel olarak uygulanır; değişiklikten sonra oyunu yeniden başlatın.",
         "set.updates_sec": "GÜNCELLEMELER", "set.updates": "Açılışta güncellemeleri denetle", "set.updates_h": "Günde bir kez GitHub'ı denetler. Hiçbir şey otomatik kurulmaz.",
         "set.check_now": "Şimdi denetle", "set.checking": "Denetleniyor\u2026",
         "upd.available": "Güncelleme mevcut", "upd.available_body": "{0} sürümü mevcut.", "upd.open": "İndir",
@@ -880,10 +943,10 @@ LANG = {
         "prof.exe_hint": "UE launcher'lı oyunlarda otomatik bulunamazsa gerçek ...-Shipping.exe'yi seçin.",
         "prof.logo": "Simge (bir .exe'den)", "prof.logo_pick": "Simge seç…",
         "prof.exe_pick": "Oyun seç…", "prof.name_lbl": "Profil adı",
-        "proxy.installed": "Proxy kuruldu", "proxy.removed": "Proxy kaldırıldı",
+        "proxy.installed": "Proxy kuruldu",
         "proxy.installed_body": "dinput8.dll oyunun yanına kopyalandı.",
         "proxy.locked": "Proxy devre dışı", "proxy.locked_body": "Oyun kapandığında temizlenecek.",
-        "proxy.removed": "Proxy kaldırıldı", "proxy.removed_body": "dinput8.dll oyun klasöründen kaldırıldı.",
+        "proxy.removed_body": "dinput8.dll oyun klasöründen kaldırıldı.",
         "proxy.err_noexe": "Oyun exe'si bulunamadı.", "proxy.err_arch": "Desteklenmeyen mimari.",
         "proxy.err_asset": "Gömülü proxy DLL'i yok (assets/proxy).",
         "proxy.err_write": "DLL yazılamadı (oyun açık mı? klasör yazılabilir mi?).",
@@ -918,6 +981,7 @@ LANG = {
         "input.mode_numbers": "Tastennummern anzeigen", "input.mode_names": "Tastennamen anzeigen",
         "ui.autogame": "Auto-Wechsel je Spiel", "ui.autogame_h": "Wendet das Profil an, dessen Spiel-EXE läuft. Ohne laufendes Spiel gilt Global.", "game.detected": "Spiel erkannt", "game.detected_body": "Voreinstellung {0} angewendet.",
         "set.startup": "Mit Windows starten", "set.startup_h": "Startet die App bei der Anmeldung. Standardmäßig aus.",
+        "set.pedals": "Pedale kombinieren (Gas + Bremse)", "set.pedals_h": "Meldet Gas und Bremse für ältere Spiele auf einer gemeinsamen Achse. Gilt global für dieses Lenkrad; Spiele nach der Änderung neu starten.",
         "set.updates_sec": "UPDATES", "set.updates": "Beim Start nach Updates suchen", "set.updates_h": "Prüft einmal täglich auf GitHub. Es wird nichts automatisch installiert.",
         "set.check_now": "Jetzt prüfen", "set.checking": "Wird geprüft\u2026",
         "upd.available": "Update verfügbar", "upd.available_body": "Version {0} ist verfügbar.", "upd.open": "Herunterladen",
@@ -996,10 +1060,10 @@ LANG = {
         "prof.exe_hint": "Bei UE-Launcher-Spielen die echte ...-Shipping.exe wählen, falls nicht automatisch gefunden.",
         "prof.logo": "Symbol (aus einer .exe)", "prof.logo_pick": "Symbol wählen…",
         "prof.exe_pick": "Spiel wählen…", "prof.name_lbl": "Profilname",
-        "proxy.installed": "Proxy installiert", "proxy.removed": "Proxy entfernt",
+        "proxy.installed": "Proxy installiert",
         "proxy.installed_body": "dinput8.dll neben dem Spiel platziert.",
         "proxy.locked": "Proxy deaktiviert", "proxy.locked_body": "Wird beim Schließen des Spiels entfernt.",
-        "proxy.removed": "Proxy entfernt", "proxy.removed_body": "dinput8.dll aus dem Spielordner entfernt.",
+        "proxy.removed_body": "dinput8.dll aus dem Spielordner entfernt.",
         "proxy.err_noexe": "Spiel-Exe nicht gefunden.", "proxy.err_arch": "Nicht unterstützte Architektur.",
         "proxy.err_asset": "Gebündelte Proxy-DLL fehlt (assets/proxy).",
         "proxy.err_write": "DLL konnte nicht geschrieben werden (läuft das Spiel? Ordner beschreibbar?).",
@@ -1071,14 +1135,15 @@ def _system_language():
 
 def load_settings():
     base = {"theme": "dark", "language": _system_language(), "last_device": None, "auto_load": False,
+            "combined_pedals": False,
             "minimize_to_tray": False, "check_updates": True, "auto_game_profile": True, "last_update_check": 0, "update_seen": "", "button_numbers": False, "test_device": None, "win_w": 1366, "win_h": 720, "last_tab": "wheel", "ui_scale": 100,
             "profiles": {"Global": dict(PROFILE_DEFAULTS)},
             "selected_profile": "Global"}
     try:
         with open(SETTINGS_FILE) as f:
             v = json.load(f)
-        for k in base:
-            v.setdefault(k, base[k])
+        for k, default in base.items():
+            v.setdefault(k, default)
         # Backfill keys added in later versions (e.g. di_ramp) so a settings
         # file written by an older build keeps its old behaviour instead of
         # hitting a missing key.
@@ -1165,7 +1230,7 @@ def _url_open(url, timeout):
                     sock.close()
                     last = e
             else:
-                raise last or OSError("no IPv4 address for %s" % self.host)
+                raise last or OSError(f"no IPv4 address for {self.host}")
             self.sock = self._context.wrap_socket(self.sock, server_hostname=self.host)
 
     class _V4Handler(urllib.request.HTTPSHandler):
@@ -1173,7 +1238,7 @@ def _url_open(url, timeout):
             return self.do_open(_V4Connection, req)
 
     req = urllib.request.Request(url, headers={
-        "User-Agent": "LegacyWheelHub/%s" % HUB_VERSION,
+        "User-Agent": f"LegacyWheelHub/{HUB_VERSION}",
         "Accept": "application/vnd.github+json, application/atom+xml, */*"})
     try:
         return urllib.request.build_opener(_V4Handler()).open(req, timeout=timeout)
@@ -1376,6 +1441,13 @@ def open_device():
         dev = None; state["connected"] = False; return False
 
 
+def _pedal_axis_value(report: list[int], axis_index: int | None, inverted: bool) -> int:
+    if axis_index is None or axis_index >= len(report):
+        return 0
+    value = report[axis_index]
+    return 255 - value if inverted else value
+
+
 class Poller(QThread):
     def run(self):
         global dev
@@ -1383,13 +1455,13 @@ class Poller(QThread):
             if dev is None:
                 ensure_native_mode(); open_device(); time.sleep(1); continue
             try:
-                data = None
+                data: list[int] | None = None
                 with dev_lock:
                     while True:
                         chunk = dev.read(64)
-                        if chunk: data = chunk
+                        if chunk: data = list(chunk)
                         else: break
-                if data and len(data) >= 8:
+                if data is not None and len(data) >= 8:
                     sd = active_profile["steer"]; fmt = sd.get("fmt", "lohi")
                     if fmt == "hilo6":
                         steer = (data[sd["hi"]] << 6) | (data[sd["lo"]] >> 2)
@@ -1400,12 +1472,9 @@ class Poller(QThread):
                     state["steer"] = steer
                     state["steer_norm"] = max(-1.0, min(1.0, (steer - sd["center"]) / sd["half"]))
                     inv = active_profile["pedal_invert"]
-                    def _ax(b):
-                        if b is None or b >= len(data): return 0
-                        return (255 - data[b]) if inv else data[b]
-                    state["throttle"] = _ax(active_profile["throttle"])
-                    state["brake"] = _ax(active_profile["brake"])
-                    state["clutch"] = _ax(active_profile["clutch"])
+                    state["throttle"] = _pedal_axis_value(data, active_profile["throttle"], inv)
+                    state["brake"] = _pedal_axis_value(data, active_profile["brake"], inv)
+                    state["clutch"] = _pedal_axis_value(data, active_profile["clutch"], inv)
                     state["raw"] = list(data[:16]); state["connected"] = True
             except Exception:
                 # Close the handle before dropping it. Just setting dev=None
@@ -1575,6 +1644,30 @@ def update_registry_ffb(gain, spring, damper, center, persist, angle):
             winreg.SetValueEx(key, "Turn", 0, winreg.REG_DWORD, int(angle))
             winreg.CloseKey(key)
         except Exception: pass
+
+
+def update_combined_pedals(enabled, device=None):
+    """Set Logitech's global combined-pedal option for the active wheel.
+
+    This is a driver setting, so it changes what games receive through the
+    Logitech controller and is intentionally global rather than per profile.
+    """
+    if winreg is None:
+        return False
+    if device is None:
+        device = "G27" if active_profile is DEVICE_PROFILES["G27"] else "DFGT"
+    device_key = {"G27": "G27", "DFGT": "DrivingForceGT"}.get(device)
+    if not device_key:
+        return False
+    path = rf"Software\Logitech\Gaming Software\GlobalDeviceSettings\{device_key}"
+    try:
+        key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, path)
+        winreg.SetValueEx(key, "CombinedPedalsEnable", 0, winreg.REG_DWORD,
+                          1 if enabled else 0)
+        winreg.CloseKey(key)
+        return True
+    except Exception:
+        return False
 
 
 def restore_ffb_defaults():
@@ -2097,7 +2190,6 @@ def _defer_infobar(kind, *args, **kwargs):
        We now close the previous InfoBar before showing a new one, so at most
        one is on screen at a time.
     """
-    global _LAST_INFOBAR
     # Optional (label_key, callback): renders a real button inside the bar.
     extra = kwargs.pop("_extra", None)
 
@@ -2426,7 +2518,7 @@ class PresetsPanel(QWidget):
             it.setParent(None)
         self.items = []
         sel = self._selected()
-        for name in global_settings["profiles"].keys():
+        for name in global_settings["profiles"]:
             prof = global_settings["profiles"].get(name, {})
             src = prof.get("logo_exe") or prof.get("exe_path") or ""
             it = PresetItem(name, exe_icon(src))
@@ -2834,7 +2926,7 @@ class LutCurveWidget(QWidget):
         # grid every 10%
         p.setPen(QPen(grid, 1))
         f = QFont(); f.setPointSize(7); p.setFont(f)
-        for i in range(0, 11):
+        for i in range(11):
             t = i / 10.0
             p.setPen(QPen(grid, 1))
             p.drawLine(QPointF(X(t), Y(0)), QPointF(X(t), Y(1)))
@@ -2956,9 +3048,7 @@ class LutTab(QWidget):
         idx = 0
         if fname and fname in getattr(self, "_files", []):
             idx = self.combo.findText(fname)
-            if idx < 0:
-                idx = 0
-        self.combo.setCurrentIndex(max(0, idx))
+        self.combo.setCurrentIndex(max(idx, 0))
         self._loading = False
         self._draw_current()
 
@@ -3454,6 +3544,17 @@ class SettingsTab(QWidget):
         scroll.setWidget(host)
 
         self.sec_gen = self._sec(lay, "set.general")
+        self.cb_combined_pedals = CheckBox(tr("set.pedals"))
+        self.cb_combined_pedals.setChecked(bool(global_settings.get("combined_pedals", False)))
+        self.cb_combined_pedals.stateChanged.connect(self._on_combined_pedals)
+        lay.addWidget(self.cb_combined_pedals)
+        lay.addSpacing(2)
+        self.pedals_hint = CaptionLabel(tr("set.pedals_h"))
+        self.pedals_hint.setWordWrap(True); lay.addWidget(self.pedals_hint)
+        # Re-apply on launch so the app preference and the driver's global
+        # setting stay in sync after a reboot or driver reinstall.
+        update_combined_pedals(bool(global_settings.get("combined_pedals", False)))
+        lay.addSpacing(8)
         self.combo_lang = ComboBox(); self.combo_lang.setMinimumWidth(190)
         for code, label in LANG_ORDER:
             self.combo_lang.addItem(label, userData=code)
@@ -3581,6 +3682,18 @@ class SettingsTab(QWidget):
     def _on_updates(self, *_):
         global_settings["check_updates"] = self.cb_upd.isChecked(); save_settings()
 
+    def _on_combined_pedals(self, *_):
+        if self._guard: return
+        enabled = self.cb_combined_pedals.isChecked()
+        if update_combined_pedals(enabled):
+            global_settings["combined_pedals"] = enabled
+            save_settings()
+            return
+        # Keep the visible control truthful if the registry write failed.
+        self._guard = True
+        self.cb_combined_pedals.setChecked(not enabled)
+        self._guard = False
+
     def _check_updates_now(self):
         # self.hub is the ControlHub we were constructed with. self.window()
         # depends on this widget already being parented into the window tree,
@@ -3632,6 +3745,7 @@ class SettingsTab(QWidget):
         for lbl in self._labels:
             lbl.setStyleSheet(f"color:{lbl_color};")
         self.tray_hint.setStyleSheet(f"color:{muted};")
+        self.pedals_hint.setStyleSheet(f"color:{muted};")
         self.scale_hint.setStyleSheet(f"color:{muted};")
         self.test_hint.setStyleSheet(f"color:{muted};")
         self.upd_hint.setStyleSheet(f"color:{muted};")
@@ -3645,6 +3759,7 @@ class SettingsTab(QWidget):
                          (self.row_test, "set.devmode")):
             lbl.setText(tr(key))
         self.cb_tray.setText(tr("set.tray")); self.tray_hint.setText(tr("set.tray_h"))
+        self.cb_combined_pedals.setText(tr("set.pedals")); self.pedals_hint.setText(tr("set.pedals_h"))
         self.cb_startup.setText(tr("set.startup")); self.startup_hint.setText(tr("set.startup_h"))
         self.cb_upd.setText(tr("set.updates")); self.upd_hint.setText(tr("set.updates_h"))
         if self.btn_upd.isEnabled():        # don't clobber "Checking..." mid-flight
