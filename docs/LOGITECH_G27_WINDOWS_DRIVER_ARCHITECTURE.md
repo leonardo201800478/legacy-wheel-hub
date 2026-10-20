@@ -132,3 +132,32 @@ Para cada opção (faixa de rotação, sensibilidade, mola central, força, peda
 
 ---
 *Última revisão documental: 2026-10-20. Atualizar esta nota quando novas capturas experimentais ou documentação oficial forem adicionadas.*
+
+
+## Atualização: leitor experimental e limites de intervenção (2026-10-20)
+
+Foi adicionado `tools/g27_windows_raw_input_diagnostics.py` para capturar relatórios de entrada HID que o Windows entrega via Raw Input. A ferramenta é complementar ao logger SDL/Pygame: a primeira registra payloads HID observados; a segunda registra eixos/botões já interpretados pela SDL. Os dois conjuntos não são diretamente equivalentes, pois a SDL pode normalizar e remapear valores e Raw Input não garante captura de todo caminho de entrada utilizado por um driver ou aplicação.
+
+Documentação e uso: [G27 Input Diagnostics](G27_INPUT_DIAGNOSTICS.md).
+
+### O que é possível interferir — e em qual camada
+
+| Camada | Possível intervenção | Limite / risco |
+|---|---|---|
+| Perfil LGS | Editar ou selecionar configuração por executável | É preciso confirmar que o LGS carregou o perfil e que a opção afeta a aplicação testada |
+| Transformação no Legacy Wheel Hub | Inverter/normalizar eixos dentro do próprio monitor ou de um adaptador de entrada que o Hub controle | Só afeta consumidores que recebem a saída transformada; não altera automaticamente a entrada vista por outros jogos |
+| API de entrada/DirectInput | Ajustar configuração por APIs suportadas, quando a API e o driver expõem essa capacidade | Não presume acesso à pilha privada do driver nem altera automaticamente o estado que outra aplicação lê |
+| Dispositivo virtual | Expor uma entrada transformada como outro joystick, se for implementada uma camada virtual compatível | Requer projeto e testes específicos; pode exigir driver adicional e assinatura/instalação, e pode causar dispositivos duplicados |
+| HID/driver/Registro | Usar interfaces e configurações documentadas e identificadas por experimento | Não enviar relatórios de saída arbitrários nem escrever chaves presumidas; mudanças podem afetar o dispositivo inteiro |
+| Filtro de kernel / substituição de driver | Interceptar ou transformar tráfego em uma camada de kernel | Alto risco e complexidade; não é a primeira opção, e não deve exigir desativar Integridade da Memória ou outras proteções |
+
+### Próxima sequência experimental
+
+1. Registrar o inventário Raw Input, os logs SDL e o estado do perfil LGS sem modificar configurações.
+2. Correlacionar o caminho de dispositivo/VID/PID e descritor HID com as mudanças nos bytes ao girar o volante, mover cada pedal e acionar botões.
+3. Obter o descritor e decodificar os campos conforme as páginas/IDs de uso e os limites lógicos/físicos. Não inferir eixos apenas olhando os bytes hexadecimais.
+4. Comparar, para a mesma ação, o payload HID, o valor SDL e o valor mostrado no painel de controle do Windows.
+5. Alterar uma única opção no LGS/Hub e repetir a coleta, anotando se o payload HID mudou ou se só mudou a interpretação acima da camada HID.
+6. Só então escolher o ponto de intervenção: transformação dentro do Hub, configuração suportada do LGS/driver ou, se houver necessidade comprovada de afetar jogos que leem diretamente o volante, estudar uma saída virtual isolada.
+
+**Distinção crítica:** Raw Input é uma interface de observação, não uma interface para sobrescrever a entrada que outro processo recebe. Um processo não pode alterar os eventos de outro jogo apenas por registrar Raw Input. Para transformar entrada globalmente, seria necessária uma camada que o jogo realmente consuma (por exemplo, saída virtual) ou uma configuração comprovadamente consumida pelo driver/LGS.
