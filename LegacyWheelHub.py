@@ -3030,7 +3030,7 @@ class TelemetryPanel(QWidget):
             set_active_pedal_inversion(profile, exe)
         _defer_infobar("warning", tr("pedal.invert"), tr("pedal.standalone_pending"),
                        duration=7000, position=InfoBarPosition.TOP, parent=main_window)
-        if profile_needs_proxy(profile):
+        if exe and profile_needs_proxy(profile):
             main_window.presets._install_for_profile(exe)
         else:
             still_needed = any(
