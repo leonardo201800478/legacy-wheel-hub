@@ -11,7 +11,7 @@
   "update_seen": "",
   "button_numbers": false,
   "test_device": null,
-  "win_w": 1575,
+  "win_w": 1579,
   "win_h": 792,
   "last_tab": "wheel",
   "ui_scale": 100,
@@ -28,8 +28,8 @@
       "logo_exe": "",
       "lut_file": "",
       "lut_enabled": false,
-      "invert_throttle": true,
-      "invert_brake": true,
+      "invert_throttle": false,
+      "invert_brake": false,
       "invert_clutch": false,
       "driver_pedal_inversion_configured": true,
       "lgs_axis_throttle": "",
@@ -41,7 +41,7 @@
       "di_gain": 100,
       "di_spring": 0,
       "di_damper": 0,
-      "di_center": 0,
+      "di_center": 25,
       "di_ramp": 7,
       "di_persist": true,
       "exe_path": "G:/LaunchBox/emulators/mame/mame.exe",
@@ -49,7 +49,7 @@
       "lut_file": "",
       "lut_enabled": false,
       "invert_throttle": false,
-      "invert_brake": false,
+      "invert_brake": true,
       "invert_clutch": false,
       "driver_pedal_inversion_configured": true,
       "lgs_axis_throttle": "",
@@ -58,6 +58,6 @@
     }
   },
   "selected_profile": "Global",
-  "win_x": -254,
-  "win_y": 294
+  "win_x": 147,
+  "win_y": 121
 }
