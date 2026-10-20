@@ -3028,8 +3028,22 @@ class TelemetryPanel(QWidget):
         exe = profile.get("exe_path", "")
         if exe:
             set_active_pedal_inversion(profile, exe)
-        _defer_infobar("warning", tr("pedal.invert"), tr("pedal.standalone_pending"),
-                       duration=7000, position=InfoBarPosition.TOP, parent=main_window)
+        axis_index = int(profile.get("pedal_axis_" + pedal + "_axis", -1))
+        if enabled and axis_index < 0:
+            notice_kind = "warning"
+            notice_title = "Selecione o eixo do pedal"
+            notice_body = "A inversão foi salva, mas não será aplicada ao jogo até você selecionar o eixo DirectInput deste pedal no menu da barra."
+        elif enabled and not exe:
+            notice_kind = "warning"
+            notice_title = "Perfil sem executável"
+            notice_body = "A opção foi salva. Associe um executável ao perfil para aplicar a configuração por jogo."
+        else:
+            notice_kind = "success"
+            notice_title = "Inversão de pedal"
+            notice_body = ("Configuração salva. Teste o sentido do eixo no jogo; a opção ainda precisa de validação no consumidor."
+                           if enabled else "Inversão desativada para este pedal.")
+        _defer_infobar(notice_kind, notice_title, notice_body,
+                       duration=5000, position=InfoBarPosition.TOP, parent=main_window)
         if exe and profile_needs_proxy(profile):
             main_window.presets._install_for_profile(exe)
         else:
