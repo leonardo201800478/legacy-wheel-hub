@@ -87,3 +87,52 @@ Primeira execução reportada para o G27:
 A amplitude 2.000 é compatível com uma excursão aproximada de +1 a -1 no eixo normalizado. Os três pedais foram detectados em eixos SDL distintos, todos decrescentes durante a pressão. Isso ainda não confirma que a inversão de um perfil LGS foi aplicada pelo driver, nem mapeia diretamente os eixos SDL aos nomes `R`/`Z` do XML.
 
 A amostra final reportada foi `[-0.12796, 0.21429, 0.99997, -0.4679, 0.99997]`. Como ela é apenas um instante e não há informação sobre a posição de cada pedal nesse instante, não deve ser usada para concluir se os pedais estavam em repouso ou invertidos. O próximo passo é examinar o JSON completo (principalmente baseline, minimum e maximum de cada pedal) e o CSV, além do XML LGS correspondente ao executável testado. Este registro é evidência de uma execução reportada, não um teste independente reproduzido pelos mantenedores.
+
+
+## Coleta avançada: relatórios HID do Windows Raw Input
+
+Foi adicionada a ferramenta `tools/g27_windows_raw_input_diagnostics.py`, separada do leitor SDL. Ela enumera dispositivos Raw Input visíveis ao Windows e tenta registrar relatórios de coleções HID Generic Desktop com uso Joystick (`0x01/0x04`) e Game Pad (`0x01/0x05`). Os relatórios são gravados como bytes hexadecimais, com timestamp, identificador do dispositivo, caminho, tamanho e índice do relatório.
+
+Execute em um terminal normal, na raiz do repositório:
+
+~~~powershell
+py tools\g27_windows_raw_input_diagnostics.py
+~~~
+
+Para uma captura de 120 segundos:
+
+~~~powershell
+py tools\g27_windows_raw_input_diagnostics.py --seconds 120
+~~~
+
+Para capturar somente quando a janela da ferramenta estiver em primeiro plano:
+
+~~~powershell
+py tools\g27_windows_raw_input_diagnostics.py --foreground-only
+~~~
+
+Arquivos de saída:
+
+- `g27-diagnostics/g27_raw_hid_<data>.csv`: um registro por relatório HID observado.
+- `g27-diagnostics/g27_raw_hid_<data>.json`: inventário inicial, dispositivos observados, coleções registradas, contagem, erros e limitações.
+
+Durante a captura, gire o volante lentamente de batente a batente, mantenha-o parado no centro, pressione cada pedal separadamente e acione todos os botões, direcional e controles auxiliares. Para melhorar a comparação, faça uma sequência por vez e anote o horário aproximado de cada ação.
+
+### Limitações importantes
+
+- Raw Input não é um sniffer elétrico do barramento USB. Ele registra relatórios HID entregues ao processo pelo Windows.
+- Os bytes ainda não são interpretados como eixos, botões ou comandos. A próxima etapa é obter e analisar o descritor HID e correlacionar os campos com os relatórios.
+- O G27 pode expor mais de uma coleção HID ou usar caminhos que não correspondam às duas coleções registradas. Uma captura vazia não prova ausência de atividade; nesse caso, devemos ampliar a enumeração/abordagem.
+- Esta ferramenta não lê nem altera relatórios de saída, não envia comandos FFB e não altera Registro, drivers ou configurações do LGS.
+- O uso de Raw Input é registrado apenas para o processo de diagnóstico. Feche a ferramenta ao terminar; ela remove seus registros de Raw Input ao encerrar.
+
+### Coleta comparativa recomendada
+
+1. Capture Raw Input e SDL/Pygame separadamente, com o mesmo volante conectado.
+2. Faça o primeiro conjunto sem tocar nos controles, para registrar ruído/estado em repouso.
+3. Gire o volante e acione cada pedal individualmente, aguardando entre movimentos.
+4. Acione cada botão uma vez, incluindo os botões de mudança de marcha e o direcional.
+5. Repita depois de alterar uma única opção no LGS ou no Hub.
+6. Compare os relatórios e guarde o JSON/CSV de cada cenário. Não conclua que o perfil está ativo só por encontrar um XML.
+
+Não compartilhe os arquivos sem revisar caminhos locais e identificadores do dispositivo.
