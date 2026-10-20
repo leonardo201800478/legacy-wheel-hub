@@ -182,120 +182,6 @@ def _data_dir():
     return d
 
 
-class InversionDiagnosticsLogger:
-    """Low-overhead, read-only JSONL trace for pedal inversion investigations."""
-
-    def __init__(self):
-        self._lock = threading.Lock()
-        self._last_report = None
-        self._last_sample_at = 0.0
-        self._missing_logged = False
-        self.path = None
-        try:
-            base = os.environ.get("LOCALAPPDATA") or os.environ.get("APPDATA") or os.path.expanduser("~")
-            folder = os.path.join(base, "Legacy Wheel Hub", "diagnostics")
-            os.makedirs(folder, exist_ok=True)
-            stamp = time.strftime("%Y%m%d_%H%M%S")
-            self.path = os.path.join(folder, f"pedal_inversion_{stamp}.jsonl")
-            self.event("session_start", app_version=globals().get("HUB_VERSION", "unknown"),
-                       pid=os.getpid(), python=sys.version.split()[0],
-                       platform=sys.platform, executable=os.path.basename(sys.executable),
-                       frozen=bool(getattr(sys, "frozen", False)))
-            self.log_device_inventory()
-        except Exception:
-            # Diagnostics must never prevent the wheel control app from starting.
-            self.path = None
-
-    def event(self, event_name, **fields):
-        if not self.path:
-            return
-        record = {"ts": time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime()),
-                  "ts_unix": round(time.time(), 3), "event": event_name}
-        record.update(fields)
-        try:
-            line = json.dumps(record, ensure_ascii=False, default=str, separators=(",", ":"))
-            with self._lock:
-                with open(self.path, "a", encoding="utf-8") as stream:
-                    stream.write(line + "\n")
-        except Exception:
-            pass
-
-    def device_missing(self):
-        if not self._missing_logged:
-            self.event("device_not_found")
-            self._missing_logged = True
-
-    def log_device_inventory(self):
-        devices = []
-        try:
-            for item in hid.enumerate(VID):
-                devices.append({
-                    "vendor_id": f"0x{int(item.get('vendor_id', 0)):04X}",
-                    "product_id": f"0x{int(item.get('product_id', 0)):04X}",
-                    "manufacturer": item.get("manufacturer_string") or "",
-                    "product": item.get("product_string") or "",
-                    "interface_number": item.get("interface_number"),
-                    "usage_page": item.get("usage_page"),
-                    "usage": item.get("usage"),
-                })
-        except Exception as exc:
-            self.event("device_inventory_error", error=repr(exc))
-            return
-        self.event("device_inventory", devices=devices)
-
-    def log_startup_config(self):
-        profiles = {}
-        for name, profile in global_settings.get("profiles", {}).items():
-            profiles[name] = {
-                "invert_throttle": bool(profile.get("invert_throttle", False)),
-                "invert_brake": bool(profile.get("invert_brake", False)),
-                "invert_clutch": bool(profile.get("invert_clutch", False)),
-                "driver_pedal_inversion_configured": bool(
-                    profile.get("driver_pedal_inversion_configured", False)),
-                "exe_name": os.path.basename(profile.get("exe_path") or ""),
-            }
-        self.event("startup_configuration",
-                   selected_profile=global_settings.get("selected_profile", "Global"),
-                   auto_game_profile=bool(global_settings.get("auto_game_profile", False)),
-                   test_device=global_settings.get("test_device"),
-                   active_hardware_profile=next(
-                       (name for name, profile in DEVICE_PROFILES.items()
-                        if profile is active_profile), None),
-                   profiles=profiles)
-
-    def log_input_report(self, report, parsed_state):
-        # Store changed reports at up to 20 samples/s. This is enough to correlate
-        # pedal motion with bytes without producing a multi-megabyte log every minute.
-        now = time.monotonic()
-        raw = tuple(report[:64])
-        if raw == self._last_report or now - self._last_sample_at < 0.05:
-            return
-        self._last_report = raw
-        self._last_sample_at = now
-        profile = active_profile or {}
-        self.event("input_sample",
-                   device=profile.get("name", "unknown"),
-                   report_length=len(report),
-                   raw_report_hex=bytes(report).hex(),
-                   raw_bytes=list(report[:16]),
-                   steer_raw=parsed_state.get("steer"),
-                   steer_normalized=round(float(parsed_state.get("steer_norm", 0.0)), 5),
-                   throttle_value=parsed_state.get("throttle"),
-                   brake_value=parsed_state.get("brake"),
-                   clutch_value=parsed_state.get("clutch"),
-                   pedal_invert=profile.get("pedal_invert"),
-                   axis_indexes={"throttle": profile.get("throttle"),
-                                 "brake": profile.get("brake"),
-                                 "clutch": profile.get("clutch")},
-                   selected_profile=global_settings.get("selected_profile", "Global"))
-
-    def shutdown(self):
-        self.event("session_end")
-
-
-inversion_diagnostics = None
-
-
 def _find_wheel():
     for d in (_exe_dir(), _resource_dir(), os.path.dirname(os.path.abspath(__file__))):
         p = os.path.join(d, "wheel.png")
@@ -1760,28 +1646,15 @@ def open_device():
     global dev, active_profile
     prof, pid = _detect_profile()
     if prof is None:
-        if inversion_diagnostics:
-            inversion_diagnostics.device_missing()
         dev = None; state["connected"] = False; return False
     try:
         d = hid.device(); d.open(VID, pid); d.set_nonblocking(1)
         dev = d; active_profile = prof; state["connected"] = True
-        if inversion_diagnostics:
-            inversion_diagnostics._missing_logged = False
-            inversion_diagnostics.event("device_connected", device=prof.get("name"),
-                                        vendor_id=f"0x{VID:04X}", product_id=f"0x{pid:04X}",
-                                        pedal_invert=prof.get("pedal_invert"),
-                                        axis_indexes={"throttle": prof.get("throttle"),
-                                                      "brake": prof.get("brake"),
-                                                      "clutch": prof.get("clutch")})
         for k, v in DEVICE_PROFILES.items():
             if v is prof and global_settings.get("last_device") != k:
                 global_settings["last_device"] = k; save_settings(); break
         return True
     except Exception as exc:
-        if inversion_diagnostics:
-            inversion_diagnostics.event("device_open_error", product_id=f"0x{pid:04X}",
-                                        error=repr(exc))
         dev = None; state["connected"] = False; return False
 
 
@@ -1820,11 +1693,7 @@ class Poller(QThread):
                     state["brake"] = _pedal_axis_value(data, active_profile["brake"], inv)
                     state["clutch"] = _pedal_axis_value(data, active_profile["clutch"], inv)
                     state["raw"] = list(data[:16]); state["connected"] = True
-                    if inversion_diagnostics:
-                        inversion_diagnostics.log_input_report(data, state)
             except Exception as exc:
-                if inversion_diagnostics:
-                    inversion_diagnostics.event("input_read_error", error=repr(exc))
                 # Close the handle before dropping it. Just setting dev=None
                 # leaks the hidapi handle: Windows keeps the device claimed,
                 # so re-plugging the wheel can fail to reopen with "access
@@ -4746,8 +4615,6 @@ class ControlHub(FramelessWindow):
         threading.Thread(target=loop, daemon=True).start()
 
     def _on_game_profile(self, name):
-        if inversion_diagnostics:
-            inversion_diagnostics.event("game_profile_changed", profile_name=name)
         """Runs on the GUI thread: switch to the detected game's profile."""
         target = name or "Global"
         if target not in global_settings.get("profiles", {}):
@@ -4913,11 +4780,9 @@ def _acquire_single_instance():
 
 
 def main():
-    global main_window, CURRENT_LANG, running, inversion_diagnostics
+    global main_window, CURRENT_LANG, running
     if not _acquire_single_instance():
         return
-    inversion_diagnostics = InversionDiagnosticsLogger()
-    inversion_diagnostics.log_startup_config()
     qInstallMessageHandler(_qt_msg_filter)
     saved = global_settings.get("language")
     if saved in LANG:
@@ -4968,9 +4833,5 @@ def main():
     app.exec()
     running = False
     poller.wait(2000)
-    if inversion_diagnostics:
-        inversion_diagnostics.shutdown()
-
-
 if __name__ == "__main__":
     main()
