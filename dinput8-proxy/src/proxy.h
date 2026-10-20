@@ -269,15 +269,29 @@ public:
                     static_cast<unsigned long>(format->dwDataSize),
                     static_cast<unsigned long>(format->dwNumObjs));
 
-                if (format->dwNumObjs != 0 && !format->rgodf) {
+                if (format->dwSize < sizeof(DIDATAFORMAT)) {
+                    LwhLogFile("DI format: invalid/short DIDATAFORMAT header (dwSize=%lu)",
+                               static_cast<unsigned long>(format->dwSize));
+                } else if (format->dwNumObjs != 0 && !format->rgodf) {
                     LwhLogFile("DI format: rgodf is null despite nonzero dwNumObjs");
+                } else if (format->dwNumObjs != 0 &&
+                           format->dwObjSize < sizeof(DIOBJECTDATAFORMAT)) {
+                    LwhLogFile(
+                        "DI format: dwObjSize=%lu is smaller than DIOBJECTDATAFORMAT=%zu",
+                        static_cast<unsigned long>(format->dwObjSize),
+                        sizeof(DIOBJECTDATAFORMAT));
                 } else if (format->rgodf) {
                     // A cap keeps diagnostics bounded if a malformed caller
-                    // supplies an unreasonable object count.
+                    // supplies an unreasonable object count. Respect dwObjSize
+                    // rather than assuming the array uses sizeof(struct) stride.
                     const DWORD count = format->dwNumObjs < 256
                         ? format->dwNumObjs : 256;
+                    const BYTE* objects =
+                        reinterpret_cast<const BYTE*>(format->rgodf);
                     for (DWORD i = 0; i < count; ++i) {
-                        const DIOBJECTDATAFORMAT& obj = format->rgodf[i];
+                        const auto* item = reinterpret_cast<const DIOBJECTDATAFORMAT*>(
+                            objects + static_cast<size_t>(i) * format->dwObjSize);
+                        const DIOBJECTDATAFORMAT& obj = *item;
                         if (obj.pguid) {
                             const GUID& g = *obj.pguid;
                             LwhLogFile(
