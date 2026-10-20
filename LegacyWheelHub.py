@@ -19,10 +19,12 @@ import copy
 import json
 import math
 import os
+import ssl
 import struct
 import sys
 import threading
 import time
+from typing import Any
 
 try:
     import hid
@@ -39,7 +41,7 @@ if not hasattr(hid, "device") and hasattr(hid, "Device"):
         """hid.device() shape on top of the other package's hid.Device."""
 
         def __init__(self):
-            self._d = None
+            self._d: Any | None = None
 
         def open(self, vid, pid):
             self._d = hid.Device(vid, pid)
@@ -47,14 +49,21 @@ if not hasattr(hid, "device") and hasattr(hid, "Device"):
         def open_path(self, path):
             self._d = hid.Device(path=path)
 
+        def _require_device(self) -> Any:
+            if self._d is None:
+                raise RuntimeError("HID device is not open")
+            return self._d
+
         def write(self, data):
             # cython-hidapi takes a list of ints, the other wants bytes.
-            return self._d.write(bytes(data))
+            return self._require_device().write(bytes(data))
 
         def read(self, size, timeout_ms=0):
-            return list(self._d.read(size, timeout_ms or 0))
+            return list(self._require_device().read(size, timeout_ms or 0))
 
         def set_nonblocking(self, on):
+            if self._d is None:
+                return
             try:
                 self._d.nonblocking = bool(on)
             except Exception:
@@ -100,6 +109,7 @@ from PySide6.QtGui import (
 from PySide6.QtWidgets import (
     QApplication,
     QFileDialog,
+    QFileIconProvider,
     QFrame,
     QGridLayout,
     QHBoxLayout,
@@ -112,16 +122,6 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-
-# QFileIconProvider moved between QtWidgets and QtGui across Qt6/PySide6
-# releases; import defensively so a wrong location can never crash startup.
-try:
-    from PySide6.QtGui import QFileIconProvider
-except Exception:
-    try:
-        from PySide6.QtWidgets import QFileIconProvider
-    except Exception:
-        QFileIconProvider = None
 
 from qfluentwidgets import (
     BodyLabel,
@@ -157,11 +157,6 @@ try:
     from qfluentwidgets import MessageBoxBase
 except Exception:
     MessageBoxBase = None
-try:
-    from qfluentwidgets import SwitchButton
-except Exception:
-    SwitchButton = None
-
 VID = 0x046D
 def _exe_dir():
     if getattr(sys, "frozen", False):
@@ -411,7 +406,7 @@ def exe_icon(path, size=20):
     Cached by (path, mtime) so repeated preset redraws are cheap.
     """
     global _ICON_PROVIDER
-    if not path or not os.path.isfile(path) or QFileIconProvider is None:
+    if not path or not os.path.isfile(path):
         return None
     try:
         mtime = os.path.getmtime(path)
@@ -1084,9 +1079,13 @@ LANG_ORDER = [("tr", "Türkçe"), ("en", "English"), ("de", "Deutsch")]
 CURRENT_LANG = "en"
 
 
-def tr(key):
+def tr(key: str) -> str:
     d = LANG.get(CURRENT_LANG) or LANG["en"]
-    return d.get(key, LANG["en"].get(key, key))
+    translated = d.get(key)
+    if translated is not None:
+        return translated
+    translated = LANG["en"].get(key)
+    return key if translated is None else translated
 
 
 state = {"steer": STEER_CENTER, "steer_norm": 0.0, "throttle": 0, "brake": 0,
@@ -1095,8 +1094,8 @@ dev = None
 dev_lock = threading.Lock()
 running = True
 active_profile = DEVICE_PROFILES["DFGT"]
-test_override = None       # set from settings once they are loaded
-main_window = None
+test_override: str | None = None
+main_window: "ControlHub | None" = None
 
 
 PROFILE_DEFAULTS = {"angle": 900, "di_gain": 101, "di_spring": 0, "di_damper": 0,
@@ -1214,6 +1213,8 @@ def _url_open(url, timeout):
     import urllib.request
 
     class _V4Connection(http.client.HTTPSConnection):
+        _context: ssl.SSLContext
+
         def connect(self):
             infos = socket.getaddrinfo(self.host, self.port,
                                        socket.AF_INET, socket.SOCK_STREAM)
@@ -1729,7 +1730,7 @@ class WheelWidget(QWidget):
         # near-white silhouette (tint it so it shows on the dark canvas).
         if px.isNull():
             return False
-        img = px.toImage().convertToFormat(QImage.Format_ARGB32)
+        img = px.toImage().convertToFormat(QImage.Format.Format_ARGB32)
         w, h = img.width(), img.height()
         if w == 0 or h == 0:
             return False
@@ -1750,18 +1751,19 @@ class WheelWidget(QWidget):
             return self._cache
         if self._src.isNull():
             self._cache = None; self._cache_key = key; return None
-        pm = self._src.scaled(px, px, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+        pm = self._src.scaled(px, px, Qt.AspectRatioMode.KeepAspectRatio,
+                              Qt.TransformationMode.SmoothTransformation)
         if self._colored:
             # real photo -> no tint, just a crisp scaled copy
             self._cache = pm; self._cache_key = key
             return pm
         col = theme_col("#9aa4b6", "#2b3440")
-        out = QPixmap(pm.size()); out.fill(Qt.transparent)
+        out = QPixmap(pm.size()); out.fill(Qt.GlobalColor.transparent)
         p = QPainter(out)
-        p.setRenderHint(QPainter.Antialiasing)
-        p.setRenderHint(QPainter.SmoothPixmapTransform)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
         p.drawPixmap(0, 0, pm)
-        p.setCompositionMode(QPainter.CompositionMode_SourceIn)
+        p.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceIn)
         p.fillRect(out.rect(), col); p.end()
         self._cache = out; self._cache_key = key
         return out
@@ -1774,8 +1776,8 @@ class WheelWidget(QWidget):
 
     def paintEvent(self, e):
         p = QPainter(self)
-        p.setRenderHint(QPainter.Antialiasing)
-        p.setRenderHint(QPainter.SmoothPixmapTransform)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
         side = max(1, min(self.width(), self.height()))
         dpr = float(self.devicePixelRatioF()) if hasattr(self, "devicePixelRatioF") else 1.0
         ss = 1.5
@@ -1807,10 +1809,10 @@ class PedalBar(QWidget):
         return False
 
     def paintEvent(self, e):
-        p = QPainter(self); p.setRenderHint(QPainter.Antialiasing)
+        p = QPainter(self); p.setRenderHint(QPainter.RenderHint.Antialiasing)
         w = self.width(); h = self.height()
         bw = 46; bx = (w - bw) / 2; by = 18; bh = h - 56
-        p.setPen(Qt.NoPen); p.setBrush(theme_col("#333333", "#e2e2e2"))
+        p.setPen(Qt.PenStyle.NoPen); p.setBrush(theme_col("#333333", "#e2e2e2"))
         p.drawRoundedRect(QRectF(bx, by, bw, bh), 8, 8)
         if self.enabled_axis:
             fh = bh * max(0.0, min(1.0, self.disp))
@@ -1818,13 +1820,14 @@ class PedalBar(QWidget):
             p.drawRoundedRect(QRectF(bx, by + bh - fh, bw, fh), 8, 8)
         f = QFont(); f.setPointSize(8); f.setBold(True); p.setFont(f)
         p.setPen(theme_col("#a0a0a0", "#5f5f5f"))
-        p.drawText(QRectF(0, 0, w, 16), Qt.AlignCenter, self.label)
+        p.drawText(QRectF(0, 0, w, 16), Qt.AlignmentFlag.AlignCenter, self.label)
         if self.enabled_axis:
             p.setPen(self.color); f.setPointSize(9); p.setFont(f)
-            p.drawText(QRectF(0, h - 20, w, 18), Qt.AlignCenter, f"{int(self.disp * 100)}%")
+            p.drawText(QRectF(0, h - 20, w, 18), Qt.AlignmentFlag.AlignCenter,
+                       f"{int(self.disp * 100)}%")
         else:
             p.setPen(theme_col("#666666", "#b0b0b0")); f.setPointSize(9); p.setFont(f)
-            p.drawText(QRectF(0, h - 20, w, 18), Qt.AlignCenter, tr("home.na"))
+            p.drawText(QRectF(0, h - 20, w, 18), Qt.AlignmentFlag.AlignCenter, tr("home.na"))
 
 
 class InputMonitor(QWidget):
@@ -1865,11 +1868,11 @@ class InputMonitor(QWidget):
         elif label:
             p.setPen(QColor("#1c1c1c") if on else txt)
             f = QFont(); f.setBold(True); f.setPointSize(9); p.setFont(f)
-            p.drawText(rect, Qt.AlignCenter, label)
+            p.drawText(rect, Qt.AlignmentFlag.AlignCenter, label)
 
     def _shape(self, p, cx, cy, shape, col, on):
         c = QColor("#1c1c1c") if on else QColor(col)
-        p.setBrush(c); p.setPen(Qt.NoPen); s = 7
+        p.setBrush(c); p.setPen(Qt.PenStyle.NoPen); s = 7
         if shape == "triangle":
             p.drawPolygon(QPolygonF([QPointF(cx, cy - s), QPointF(cx - s, cy + s), QPointF(cx + s, cy + s)]))
         elif shape == "square":
@@ -1895,7 +1898,7 @@ class InputMonitor(QWidget):
     def _section(self, p, x, y, text):
         muted = theme_col("#a0a0a0", "#5f5f5f")
         f = QFont(); f.setBold(True); f.setPointSize(8); p.setFont(f)
-        p.setPen(muted); p.drawText(QRectF(x, y, 260, 14), Qt.AlignLeft, text)
+        p.setPen(muted); p.drawText(QRectF(x, y, 260, 14), Qt.AlignmentFlag.AlignLeft, text)
 
     def _face_buttons(self, p, cx, cy, P, d=28, sp=28):
         h = d / 2
@@ -1929,22 +1932,23 @@ class InputMonitor(QWidget):
         edge = theme_col("#2a3142", "#c2c7d2")
         p.setPen(QPen(edge, 2)); p.setBrush(ring)
         p.drawEllipse(QPointF(cx, cy), r, r)
-        p.setPen(Qt.NoPen); p.setBrush(inner)
+        p.setPen(Qt.PenStyle.NoPen); p.setBrush(inner)
         p.drawEllipse(QPointF(cx, cy), r - 6, r - 6)
         if on:                                  # the GT badge IS the horn button
-            p.setBrush(QColor(ACCENT)); p.setPen(Qt.NoPen)
+            p.setBrush(QColor(ACCENT)); p.setPen(Qt.PenStyle.NoPen)
             p.drawEllipse(QPointF(cx, cy), r - 6, r - 6)
         f = QFont(); f.setBold(True); f.setItalic(not label); f.setPointSize(
             max(1, int(r * (0.5 if label else 0.62))))
         p.setFont(f); p.setPen(QColor("#1c1c1c") if on else QColor("#f3f4f6"))
-        p.drawText(QRectF(cx - r, cy - r, 2 * r, 2 * r), Qt.AlignCenter, label or "GT")
+        p.drawText(QRectF(cx - r, cy - r, 2 * r, 2 * r),
+                   Qt.AlignmentFlag.AlignCenter, label or "GT")
 
     def _dial(self, p, cx, cy, r, on=False, label="\u21B5", side_labels=None):
         base = theme_col("#222a3a", "#eef0f4"); edge = theme_col("#3a4256", "#c8ccd6")
         red = QColor("#e0463c"); tick = theme_col("#5a6276", "#aeb4c2")
         p.setPen(QPen(edge, 2)); p.setBrush(base)
         p.drawEllipse(QPointF(cx, cy), r, r)
-        p.setPen(QPen(red, 3)); p.setBrush(Qt.NoBrush)
+        p.setPen(QPen(red, 3)); p.setBrush(Qt.BrushStyle.NoBrush)
         p.drawEllipse(QPointF(cx, cy), r - 5, r - 5)
         p.setPen(QPen(tick, 1.4))
         for i in range(24):
@@ -1959,8 +1963,9 @@ class InputMonitor(QWidget):
         p.drawEllipse(QPointF(cx, cy), cr, cr)
         f = QFont(); f.setBold(True); f.setPointSize(max(1, int(cr * 0.95))); p.setFont(f)
         p.setPen(QColor("#1c1c1c") if on else theme_col("#e6e8ee", "#2a2f3a"))
-        p.drawText(QRectF(cx - cr, cy - cr, 2 * cr, 2 * cr), Qt.AlignCenter, label)
-        p.setBrush(red); p.setPen(Qt.NoPen); a = 6
+        p.drawText(QRectF(cx - cr, cy - cr, 2 * cr, 2 * cr),
+                   Qt.AlignmentFlag.AlignCenter, label)
+        p.setBrush(red); p.setPen(Qt.PenStyle.NoPen); a = 6
         lx = cx - r - 8; rx = cx + r + 8
         p.drawPolygon(QPolygonF([QPointF(lx + a, cy - a), QPointF(lx - a, cy), QPointF(lx + a, cy + a)]))
         p.drawPolygon(QPolygonF([QPointF(rx - a, cy - a), QPointF(rx + a, cy), QPointF(rx - a, cy + a)]))
@@ -1972,8 +1977,10 @@ class InputMonitor(QWidget):
             lft, rgt = side_labels
             f2 = QFont(); f2.setBold(True); f2.setPointSize(8); p.setFont(f2)
             p.setPen(theme_col("#e6e8ee", "#2a2f3a"))
-            p.drawText(QRectF(lx - 34, cy - 8, 22, 16), Qt.AlignRight | Qt.AlignVCenter, lft)
-            p.drawText(QRectF(rx + 12, cy - 8, 22, 16), Qt.AlignLeft | Qt.AlignVCenter, rgt)
+            p.drawText(QRectF(lx - 34, cy - 8, 22, 16),
+                       Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter, lft)
+            p.drawText(QRectF(rx + 12, cy - 8, 22, 16),
+                       Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, rgt)
 
     def _paint_g27(self, p, P, chan):
         D = 38
@@ -1999,7 +2006,7 @@ class InputMonitor(QWidget):
         p.setPen(QPen(sepc, 1)); p.drawLine(QPointF(312, 262), QPointF(312, 438))
         gx = [346, 408, 470]; rx = 516          # R: between 6 and an even step
         gt_c, gb_c = 300, 384; gm = (gt_c + gb_c) // 2
-        p.setPen(QPen(chan, 6)); p.setBrush(Qt.NoBrush)
+        p.setPen(QPen(chan, 6)); p.setBrush(Qt.BrushStyle.NoBrush)
         for x in gx:
             p.drawLine(QPointF(x, gt_c), QPointF(x, gb_c))
         p.drawLine(QPointF(gx[0], gm), QPointF(rx, gm))
@@ -2034,7 +2041,7 @@ class InputMonitor(QWidget):
                                 if self.numbered else None))
 
     def paintEvent(self, e):
-        p = QPainter(self); p.setRenderHint(QPainter.Antialiasing)
+        p = QPainter(self); p.setRenderHint(QPainter.RenderHint.Antialiasing)
         P = self.pressed
         chan = theme_col("#393939", "#d0d0d0")
         if active_profile is DEVICE_PROFILES["G27"]:
@@ -2117,7 +2124,7 @@ def _preset_edit_dialog(title, cur_name, cur_exe, cur_logo, parent, allow_rename
             self.viewLayout.addWidget(self.logo_lbl)
             lrow = QHBoxLayout(); lrow.setSpacing(8)
             self.preview = QLabel(); self.preview.setFixedSize(24, 24)
-            self.preview.setAlignment(Qt.AlignCenter)
+            self.preview.setAlignment(Qt.AlignmentFlag.AlignCenter)
             self.logo_field = LineEdit(self); self.logo_field.setReadOnly(True)
             self.btn_logo = PushButton(tr("prof.logo_pick"))
             self.btn_logo.clicked.connect(self._pick_logo)
@@ -2172,7 +2179,7 @@ def _confirm_dialog(title, body, parent):
         except Exception:
             pass
     from PySide6.QtWidgets import QMessageBox
-    return QMessageBox.question(parent, title, body) == QMessageBox.Yes
+    return QMessageBox.question(parent, title, body) == QMessageBox.StandardButton.Yes
 
 
 _LAST_INFOBAR = None
@@ -2269,7 +2276,7 @@ def hub_qss():
         padding: 5px 16px;
     }}
     #centerBtn:hover, #presetAdd:hover, #resetBtn:hover {{
-        background-color: {_accent_rgba(26).name(QColor.HexArgb)};
+        background-color: {_accent_rgba(26).name(QColor.NameFormat.HexArgb)};
         border: 1px solid {QColor(ACCENT).name()};
     }}
     #themeBtn {{ background: transparent; border: none; border-radius: 6px; }}
@@ -2278,29 +2285,49 @@ def hub_qss():
     """
 
 
-def section_header(text):
-    w = QWidget()
+class _HeaderWidget(QWidget):
+    _bar: QFrame
+    _lbl: QLabel
+    _key: str
+
+
+class _SliderBlock(Slider):
+    _nm: StrongBodyLabel
+    _hint: CaptionLabel
+    _val: StrongBodyLabel
+
+
+class _KeyedPushButton(PushButton):
+    _key: str
+
+
+class _KeyedBodyLabel(BodyLabel):
+    _key: str
+
+
+def section_header(text: str) -> _HeaderWidget:
+    w = _HeaderWidget()
     h = QHBoxLayout(w); h.setContentsMargins(0, 0, 0, 0); h.setSpacing(9)
     bar = QFrame(); bar.setFixedSize(3, 14)
     bar.setStyleSheet(f"background:{ACCENT}; border-radius:1px;")
     lbl = CaptionLabel(text)
     f = lbl.font(); f.setBold(True); f.setPointSize(9)
-    f.setLetterSpacing(QFont.AbsoluteSpacing, 1.0)
+    f.setLetterSpacing(QFont.SpacingType.AbsoluteSpacing, 1.0)
     lbl.setFont(f)
     h.addWidget(bar); h.addWidget(lbl); h.addStretch(1)
     w._bar = bar; w._lbl = lbl
     return w
 
 
-def column_header(text, button=None):
+def column_header(text: str, button: QWidget | None = None) -> _HeaderWidget:
     """Tall accent-bar header used at the top of each column."""
-    w = QWidget()
+    w = _HeaderWidget()
     h = QHBoxLayout(w); h.setContentsMargins(0, 0, 0, 0); h.setSpacing(10)
     bar = QFrame(); bar.setFixedSize(3, 16)
     bar.setStyleSheet(f"background:{ACCENT}; border-radius:1px;")
     lbl = StrongBodyLabel(text)
     f = lbl.font(); f.setBold(True); f.setPointSize(10)
-    f.setLetterSpacing(QFont.AbsoluteSpacing, 1.0)
+    f.setLetterSpacing(QFont.SpacingType.AbsoluteSpacing, 1.0)
     lbl.setFont(f)
     h.addWidget(bar); h.addWidget(lbl); h.addStretch(1)
     if button is not None:
@@ -2319,22 +2346,23 @@ class WheelLogo(QWidget):
         self._src = QPixmap(WHEEL_PNG) if os.path.exists(WHEEL_PNG) else QPixmap()
 
     def paintEvent(self, e):
-        p = QPainter(self); p.setRenderHint(QPainter.Antialiasing)
-        p.setRenderHint(QPainter.SmoothPixmapTransform)
+        p = QPainter(self); p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
         d = min(self.width(), self.height())
         if not self._src.isNull():
-            pm = self._src.scaled(d, d, Qt.KeepAspectRatio, Qt.SmoothTransformation)
-            out = QPixmap(pm.size()); out.fill(Qt.transparent)
+            pm = self._src.scaled(d, d, Qt.AspectRatioMode.KeepAspectRatio,
+                                  Qt.TransformationMode.SmoothTransformation)
+            out = QPixmap(pm.size()); out.fill(Qt.GlobalColor.transparent)
             q = QPainter(out); q.drawPixmap(0, 0, pm)
-            q.setCompositionMode(QPainter.CompositionMode_SourceIn)
+            q.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceIn)
             q.fillRect(out.rect(), theme_col("#e6e6e6", "#3a4150")); q.end()
             p.drawPixmap((self.width() - out.width()) // 2, (self.height() - out.height()) // 2, out)
             return
         col = theme_col("#aab2c0", "#5a6270")
         cx = cy = d / 2.0; R = d / 2.0 - 3
-        p.setPen(QPen(col, 2.4)); p.setBrush(Qt.NoBrush)
+        p.setPen(QPen(col, 2.4)); p.setBrush(Qt.BrushStyle.NoBrush)
         p.drawEllipse(QPointF(cx, cy), R, R)
-        p.setBrush(col); p.setPen(Qt.NoPen)
+        p.setBrush(col); p.setPen(Qt.PenStyle.NoPen)
         p.drawEllipse(QPointF(cx, cy), 3.4, 3.4)
         p.setPen(QPen(col, 2.4))
         for ang in (90, 210, 330):
@@ -2355,7 +2383,7 @@ class SteerBar(QWidget):
         return False
 
     def paintEvent(self, e):
-        p = QPainter(self); p.setRenderHint(QPainter.Antialiasing)
+        p = QPainter(self); p.setRenderHint(QPainter.RenderHint.Antialiasing)
         w = self.width(); h = self.height(); cy = h / 2.0
         line = theme_col("#3a4150", "#c7ccd6")
         p.setPen(QPen(line, 2))
@@ -2365,7 +2393,7 @@ class SteerBar(QWidget):
             p.drawLine(QPointF(x, cy - (8 if big else 6)), QPointF(x, cy + (8 if big else 6)))
         span = (w - 24) / 2.0
         mx = w / 2.0 + max(-1.0, min(1.0, self.disp)) * span
-        p.setBrush(QColor(ACCENT)); p.setPen(Qt.NoPen)
+        p.setBrush(QColor(ACCENT)); p.setPen(Qt.PenStyle.NoPen)
         p.drawEllipse(QPointF(mx, cy), 5.5, 5.5)
 
 
@@ -2379,18 +2407,18 @@ class PresetItem(QWidget):
     def __init__(self, name, icon=None):
         super().__init__()
         self.name = name; self.selected = False
-        self.setFixedHeight(42); self.setCursor(Qt.PointingHandCursor)
+        self.setFixedHeight(42); self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setToolTip(name)                       # full name on hover
         lay = QHBoxLayout(self); lay.setContentsMargins(18, 0, 12, 0); lay.setSpacing(9)
         self.icon = QLabel()
         self.icon.setFixedSize(18, 18)
-        self.icon.setAlignment(Qt.AlignCenter)
+        self.icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.set_icon(icon)
-        lay.addWidget(self.icon, 0, Qt.AlignVCenter)
+        lay.addWidget(self.icon, 0, Qt.AlignmentFlag.AlignVCenter)
         self.lbl = BodyLabel(name)
         # let the label take the remaining width and shrink freely so long
         # names get an ellipsis instead of overflowing the fixed-width panel
-        self.lbl.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
+        self.lbl.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
         self.lbl.setMinimumWidth(0)
         lay.addWidget(self.lbl, 1)
         self.set_selected(False)
@@ -2401,7 +2429,7 @@ class PresetItem(QWidget):
             if w < 12:                              # not laid out yet -> full text
                 self.lbl.setText(self.name); return
             fm = QFontMetrics(self.lbl.font())
-            self.lbl.setText(fm.elidedText(self.name, Qt.ElideRight, w))
+            self.lbl.setText(fm.elidedText(self.name, Qt.TextElideMode.ElideRight, w))
         except Exception:
             self.lbl.setText(self.name)
 
@@ -2447,8 +2475,8 @@ class PresetItem(QWidget):
     def paintEvent(self, e):
         if not self.selected:
             return
-        p = QPainter(self); p.setRenderHint(QPainter.Antialiasing)
-        p.setBrush(_accent_rgba(28)); p.setPen(Qt.NoPen)
+        p = QPainter(self); p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        p.setBrush(_accent_rgba(28)); p.setPen(Qt.PenStyle.NoPen)
         p.drawRoundedRect(QRectF(8, 3, self.width() - 16, self.height() - 6), 6, 6)
         p.setBrush(QColor(ACCENT))
         p.drawRoundedRect(QRectF(8, 9, 3, self.height() - 18), 1.5, 1.5)
@@ -2711,22 +2739,22 @@ class TelemetryPanel(QWidget):
         lay.addWidget(self.hdr)
         lay.addStretch(1)
         self.wheel = WheelWidget(); self.wheel.setFixedSize(248, 248)
-        lay.addWidget(self.wheel, 0, Qt.AlignHCenter)
-        self.angle = TitleLabel("0\u00b0"); self.angle.setAlignment(Qt.AlignHCenter)
+        lay.addWidget(self.wheel, 0, Qt.AlignmentFlag.AlignHCenter)
+        self.angle = TitleLabel("0\u00b0"); self.angle.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         fnt = self.angle.font(); fnt.setPointSize(36); fnt.setBold(True); self.angle.setFont(fnt)
         lay.addWidget(self.angle)
         
-        self.cap = CaptionLabel(tr("home.steering")); self.cap.setAlignment(Qt.AlignHCenter)
+        self.cap = CaptionLabel(tr("home.steering")); self.cap.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         f = self.cap.font(); f.setBold(True)
-        f.setLetterSpacing(QFont.AbsoluteSpacing, 1.0)
+        f.setLetterSpacing(QFont.SpacingType.AbsoluteSpacing, 1.0)
         self.cap.setFont(f)
-        lay.addWidget(self.cap, 0, Qt.AlignHCenter)
+        lay.addWidget(self.cap, 0, Qt.AlignmentFlag.AlignHCenter)
         
         lay.addSpacing(10)
         self.steerbar = SteerBar()
         lay.addWidget(self.steerbar)
         lay.addSpacing(16)
-        prow = QHBoxLayout(); prow.setSpacing(26); prow.setAlignment(Qt.AlignHCenter)
+        prow = QHBoxLayout(); prow.setSpacing(26); prow.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         self.clutch = PedalBar(tr("home.clutch"), "#60a5fa")
         self.brake = PedalBar(tr("home.brake"), "#ff6b6b")
         self.throttle = PedalBar(tr("home.throttle"), "#5dc98a")
@@ -2748,7 +2776,7 @@ class TelemetryPanel(QWidget):
         self.throttle.label = tr("home.throttle"); self.throttle.update()
 
     def _center_wheel(self):
-        if dev is None:
+        if dev is None or main_window is None:
             return
         ffb_write(stop_forces_cmd())
         ffb_write(rotation_cmd(main_window.applied_rotation()))
@@ -2770,6 +2798,8 @@ class TelemetryPanel(QWidget):
             self._center_finish()
 
     def _center_finish(self):
+        if main_window is None:
+            return
         self._center_state["active"] = False; self._center_timer.stop()
         w = main_window.wheelset
         f = w.s_center.value() if w.cb_center.isChecked() else 0
@@ -2778,6 +2808,8 @@ class TelemetryPanel(QWidget):
         ffb_write(autocenter_cmd(f, w.s_ramp.value()))
 
     def refresh(self):
+        if main_window is None:
+            return
         n = state["steer_norm"]
         self.wheel.target = main_window.applied_rotation() / 2 * n
         self.wheel.animate()
@@ -2808,12 +2840,12 @@ def _restyle_accent(*labels):
         except Exception: pass
 
 
-def _slider_block(lay, name, lo, hi, val, suffix, hint):
+def _slider_block(lay, name, lo, hi, val, suffix, hint) -> _SliderBlock:
     top = QHBoxLayout()
     nm = StrongBodyLabel(name)
     vl = StrongBodyLabel(f"{val}{suffix}"); vl.setStyleSheet(f"color:{ACCENT};")
     top.addWidget(nm); top.addStretch(1); top.addWidget(vl)
-    s = Slider(Qt.Horizontal); s.setRange(lo, hi); s.setValue(val)
+    s = _SliderBlock(Qt.Orientation.Horizontal); s.setRange(lo, hi); s.setValue(val)
     s.valueChanged.connect(lambda v: vl.setText(f"{v}{suffix}"))
     hl = CaptionLabel(hint)
     hl.setWordWrap(True)          # long hints must wrap, not widen the column
@@ -2828,8 +2860,9 @@ class WheelSettingsTab(QWidget):
         super().__init__()
         prof = global_settings["profiles"].get(global_settings["selected_profile"], {})
         outer = QVBoxLayout(self); outer.setContentsMargins(0, 0, 0, 0)
-        scroll = QScrollArea(self); scroll.setWidgetResizable(True); scroll.setFrameShape(QFrame.NoFrame)
-        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        scroll = QScrollArea(self); scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         scroll.viewport().setStyleSheet("background:transparent;")
         outer.addWidget(scroll)
         host = QWidget(); host.setStyleSheet("background:transparent;")
@@ -2860,7 +2893,7 @@ class WheelSettingsTab(QWidget):
         for d in (270, 360, 540, 720, 900):
             b = PushButton(f"{d}\u00b0")
             b.setMinimumWidth(1)                 # 5 buttons must fit when narrow
-            b.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+            b.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
             b.clicked.connect(lambda _, x=d: self.s_rot.setValue(x))
             prow.addWidget(b)
         lay.addLayout(prow)
@@ -2900,7 +2933,7 @@ class LutCurveWidget(QWidget):
         super().__init__()
         self.points = []            # list of (in, out) in 0..1
         self.setMinimumHeight(220)
-        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
 
     def set_points(self, pts):
         self.points = pts or []
@@ -2908,7 +2941,7 @@ class LutCurveWidget(QWidget):
 
     def paintEvent(self, e):
         p = QPainter(self)
-        p.setRenderHint(QPainter.Antialiasing)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
         dark = isDarkTheme()
         grid = QColor(255, 255, 255, 22) if dark else QColor(0, 0, 0, 22)
         axis = QColor(255, 255, 255, 90) if dark else QColor(0, 0, 0, 90)
@@ -2934,9 +2967,10 @@ class LutCurveWidget(QWidget):
             p.setPen(QPen(txt, 1))
             if i % 2 == 0:
                 p.drawText(QRectF(X(t) - 14, Y(0) + 4, 28, 14),
-                           Qt.AlignHCenter, str(i * 10))
+                           Qt.AlignmentFlag.AlignHCenter, str(i * 10))
                 p.drawText(QRectF(0, Y(t) - 7, m_l - 6, 14),
-                           Qt.AlignRight | Qt.AlignVCenter, str(i * 10))
+                           Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
+                           str(i * 10))
 
         # axes
         p.setPen(QPen(axis, 1))
@@ -2944,14 +2978,16 @@ class LutCurveWidget(QWidget):
         p.drawLine(QPointF(X(0), Y(0)), QPointF(X(0), Y(1)))
 
         # 1:1 reference (dashed)
-        pen = QPen(ref, 1); pen.setStyle(Qt.DashLine); p.setPen(pen)
+        pen = QPen(ref, 1); pen.setStyle(Qt.PenStyle.DashLine); p.setPen(pen)
         p.drawLine(QPointF(X(0), Y(0)), QPointF(X(1), Y(1)))
 
         # axis captions
         p.setPen(QPen(txt, 1))
-        p.drawText(QRectF(gx, h - 14, gw, 14), Qt.AlignHCenter, tr("lut.axis_in"))
+        p.drawText(QRectF(gx, h - 14, gw, 14), Qt.AlignmentFlag.AlignHCenter,
+                   tr("lut.axis_in"))
         p.save(); p.translate(10, gy + gh / 2); p.rotate(-90)
-        p.drawText(QRectF(-40, -8, 80, 14), Qt.AlignHCenter, tr("lut.axis_out"))
+        p.drawText(QRectF(-40, -8, 80, 14), Qt.AlignmentFlag.AlignHCenter,
+                   tr("lut.axis_out"))
         p.restore()
 
         # curve
@@ -3267,7 +3303,8 @@ class FFBTestTab(QWidget):
                  ("ffb.vibe_fast", lambda: self._vibe(90, 0.012)), ("ffb.vibe_heavy", lambda: self._vibe(110, 0.020))]
         self._adv_btns = []
         for i, (tk, cb) in enumerate(specs):
-            b = PushButton(tr(tk)); b._key = tk; b.clicked.connect(cb); g2.addWidget(b, i // 2, i % 2)
+            b = _KeyedPushButton(tr(tk)); b._key = tk
+            b.clicked.connect(cb); g2.addWidget(b, i // 2, i % 2)
             self._adv_btns.append(b)
         lay.addLayout(g2); lay.addSpacing(10)
         self.stop = PrimaryPushButton(tr("ffb.stop")); self.stop.clicked.connect(self._stop)
@@ -3370,13 +3407,13 @@ class InputMonitorTab(QWidget):
         # both rather than picking one and leaving the user to translate.
         self.btn_mode = TransparentPushButton(tr("input.mode_numbers"))
         self.btn_mode.clicked.connect(self._toggle_mode)
-        hrow.addWidget(self.btn_mode, 0, Qt.AlignVCenter)
+        hrow.addWidget(self.btn_mode, 0, Qt.AlignmentFlag.AlignVCenter)
         lay.addLayout(hrow); lay.addSpacing(6)
         self.mon = InputMonitor()
         # After self.mon exists: the label reads the restored mode off it, so
         # syncing any earlier crashes on a missing attribute.
         self._sync_mode_label()
-        lay.addWidget(self.mon, 0, Qt.AlignHCenter)
+        lay.addWidget(self.mon, 0, Qt.AlignmentFlag.AlignHCenter)
         lay.addSpacing(12)
         self.led = PushButton(tr("input.led")); self.led.clicked.connect(self._led)
         lay.addWidget(self.led)
@@ -3429,8 +3466,9 @@ class InfoTab(QWidget):
         super().__init__()
         self.vals = {}; self._bars = []; self._labels = []
         outer = QVBoxLayout(self); outer.setContentsMargins(0, 0, 0, 0)
-        scroll = QScrollArea(self); scroll.setWidgetResizable(True); scroll.setFrameShape(QFrame.NoFrame)
-        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        scroll = QScrollArea(self); scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         scroll.viewport().setStyleSheet("background:transparent;")
         outer.addWidget(scroll)
         host = QWidget(); host.setStyleSheet("background:transparent;")
@@ -3467,7 +3505,7 @@ class InfoTab(QWidget):
         lay.addWidget(ver)
         self.link = BodyLabel()
         self.link.setOpenExternalLinks(True)
-        self.link.setTextInteractionFlags(Qt.TextBrowserInteraction)
+        self.link.setTextInteractionFlags(Qt.TextInteractionFlag.TextBrowserInteraction)
         lay.addWidget(self.link)
         self.lic = BodyLabel(tr("about.license"))
         lay.addWidget(self.lic)
@@ -3482,15 +3520,16 @@ class InfoTab(QWidget):
             f'<a style="color:#ff8a3d;" '
             f'href="https://github.com/Sadooo27/legacy-wheel-hub">{tr("about.repo")}</a>')
 
-    def _sec(self, lay, key):
+    def _sec(self, lay, key) -> _HeaderWidget:
         hd = section_header(tr(key)); hd._key = key; self._bars.append(hd._bar); self._secs.append(hd)
         if lay.count():          # no gap above the FIRST header: it must line
             lay.addSpacing(8)    # up with the other tabs' first header
         lay.addWidget(hd); lay.addSpacing(4)
+        return hd
 
     def _row(self, lay, key, field):
         row = QHBoxLayout(); row.setContentsMargins(14, 0, 4, 0)
-        lbl = BodyLabel(tr(key)); lbl._key = key
+        lbl = _KeyedBodyLabel(tr(key)); lbl._key = key
         val = StrongBodyLabel("-")
         row.addWidget(lbl); row.addStretch(1); row.addWidget(val)
         lay.addLayout(row)
@@ -3535,8 +3574,9 @@ class SettingsTab(QWidget):
         super().__init__()
         self.hub = hub; self._bars = []; self._labels = []; self._guard = False
         outer = QVBoxLayout(self); outer.setContentsMargins(0, 0, 0, 0)
-        scroll = QScrollArea(self); scroll.setWidgetResizable(True); scroll.setFrameShape(QFrame.NoFrame)
-        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        scroll = QScrollArea(self); scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         scroll.viewport().setStyleSheet("background:transparent;")
         outer.addWidget(scroll)
         host = QWidget(); host.setStyleSheet("background:transparent;")
@@ -3607,7 +3647,7 @@ class SettingsTab(QWidget):
         self.combo_test.addItem(tr("about.test_auto"), userData=None)
         self.combo_test.addItem("DFGT", userData="DFGT")
         self.combo_test.addItem("G27", userData="G27")
-        self.combo_test.setCurrentIndex({"DFGT": 1, "G27": 2}.get(test_override, 0))
+        self.combo_test.setCurrentIndex({"DFGT": 1, "G27": 2}.get(test_override or "", 0))
         self.combo_test.currentIndexChanged.connect(self._on_test)
         self.row_test = self._field(lay, "set.devmode", self.combo_test)
         self.test_hint = CaptionLabel(tr("set.devmode_h"))
@@ -3635,16 +3675,16 @@ class SettingsTab(QWidget):
         lay.addWidget(self.btn_upd)
         lay.addStretch(1)
 
-    def _sec(self, lay, key):
+    def _sec(self, lay, key) -> _HeaderWidget:
         hd = section_header(tr(key)); hd._key = key; self._bars.append(hd._bar)
         if lay.count():          # no gap above the FIRST header: it must line
             lay.addSpacing(8)    # up with the other tabs' first header
         lay.addWidget(hd); lay.addSpacing(4)
         return hd
 
-    def _field(self, lay, key, ctrl):
+    def _field(self, lay, key, ctrl) -> _KeyedBodyLabel:
         row = QHBoxLayout(); row.setContentsMargins(14, 0, 4, 0)
-        lbl = BodyLabel(tr(key)); lbl._key = key
+        lbl = _KeyedBodyLabel(tr(key)); lbl._key = key
         self._labels.append(lbl)
         row.addWidget(lbl); row.addStretch(1); row.addWidget(ctrl)
         lay.addLayout(row)
@@ -3656,7 +3696,10 @@ class SettingsTab(QWidget):
 
     def _on_scale(self, *_):
         if self._guard: return
-        global_settings["ui_scale"] = int(self.combo_scale.currentData()); save_settings()
+        scale = self.combo_scale.currentData()
+        if not isinstance(scale, int):
+            raise TypeError("UI scale selection must be an integer")
+        global_settings["ui_scale"] = scale; save_settings()
         try:
             _defer_infobar("success", tr("set.ui_scale"), tr("set.restart_hint"), duration=4000,
                             position=InfoBarPosition.TOP, parent=self.window())
@@ -3724,18 +3767,10 @@ class SettingsTab(QWidget):
         # poller - which never runs while no wheel is connected. Refresh them
         # by hand so switching the test device actually changes the UI.
         w = self.window()
-        for path in ("telemetry", "settings.input_tab"):
-            try:
-                o = w
-                for p in path.split("."): o = getattr(o, p)
-                o.refresh()
-            except Exception:
-                pass
-        for owner in (w, getattr(w, "titleBar", None)):
-            try:
-                owner.set_device(active_profile["name"]); break
-            except Exception:
-                pass
+        if isinstance(w, ControlHub):
+            w.telemetry.refresh()
+            w.settings.input_tab.refresh()
+            w.titleBar.set_device(active_profile["name"])
 
     def restyle(self):
         for b in self._bars:
@@ -3816,10 +3851,10 @@ class SettingsColumn(QWidget):
         self.gear.setToolTip(tr("set.title")); self.gear.clicked.connect(self._open_settings)
 
         gsep = QFrame(); gsep.setObjectName("vsep"); gsep.setFixedSize(1, 22)
-        gsep.setFrameShape(QFrame.NoFrame)
+        gsep.setFrameShape(QFrame.Shape.NoFrame)
         toprow.addWidget(self.pivot); toprow.addStretch(1)
-        toprow.addWidget(gsep, 0, Qt.AlignVCenter); toprow.addSpacing(4)
-        toprow.addWidget(self.gear, 0, Qt.AlignVCenter)
+        toprow.addWidget(gsep, 0, Qt.AlignmentFlag.AlignVCenter); toprow.addSpacing(4)
+        toprow.addWidget(self.gear, 0, Qt.AlignmentFlag.AlignVCenter)
         lay.addLayout(toprow)
         # Ensure the whole tab strip always fits: force the pivot's minimum
         # width to the width it needs to show every tab, and widen the column
@@ -3890,11 +3925,13 @@ class CustomTitleBar(TitleBar):
     def __init__(self, parent):
         super().__init__(parent)
         self.setObjectName("Header")
-        self.setAttribute(Qt.WA_StyledBackground, True)
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.setFixedHeight(78)
         # strip the default layout
         while self.hBoxLayout.count():
             it = self.hBoxLayout.takeAt(0)
+            if it is None:
+                break
             w = it.widget()
             if w is not None:
                 w.setParent(None)
@@ -3909,13 +3946,14 @@ class CustomTitleBar(TitleBar):
         self.logo = WheelLogo(46)
         tcol = QVBoxLayout(); tcol.setContentsMargins(0, 0, 0, 0); tcol.setSpacing(2)
         self.brand = StrongBodyLabel("Legacy Wheel Hub"); self.brand.setStyleSheet(f"color:{ACCENT};")
-        bf = self.brand.font(); bf.setBold(True); bf.setPointSize(15); bf.setLetterSpacing(QFont.AbsoluteSpacing, 0.3)
+        bf = self.brand.font(); bf.setBold(True); bf.setPointSize(15)
+        bf.setLetterSpacing(QFont.SpacingType.AbsoluteSpacing, 0.3)
         self.brand.setFont(bf)
         self.device = CaptionLabel("")
         df = self.device.font(); df.setPointSize(9); self.device.setFont(df)
         tcol.addStretch(1); tcol.addWidget(self.brand); tcol.addWidget(self.device); tcol.addStretch(1)
-        lh.addWidget(self.logo, 0, Qt.AlignVCenter); lh.addLayout(tcol)
-        root.addWidget(left, 0, Qt.AlignVCenter)
+        lh.addWidget(self.logo, 0, Qt.AlignmentFlag.AlignVCenter); lh.addLayout(tcol)
+        root.addWidget(left, 0, Qt.AlignmentFlag.AlignVCenter)
         root.addStretch(1)
 
         # right area: window buttons on top (min / max / close), actions below
@@ -3930,8 +3968,8 @@ class CustomTitleBar(TitleBar):
         self.status.setStyleSheet("color:#ff6b6b;")
         self.apply_btn = PushButton("APPLY"); self.apply_btn.setObjectName("applyBtn")
         actrow.addStretch(1)
-        actrow.addWidget(self.status, 0, Qt.AlignVCenter)
-        actrow.addWidget(self.apply_btn, 0, Qt.AlignVCenter)
+        actrow.addWidget(self.status, 0, Qt.AlignmentFlag.AlignVCenter)
+        actrow.addWidget(self.apply_btn, 0, Qt.AlignmentFlag.AlignVCenter)
         rv.addLayout(actrow)
         root.addWidget(right, 0)
         self.style_buttons()
@@ -3957,6 +3995,8 @@ class CustomTitleBar(TitleBar):
 #  Main window
 # --------------------------------------------------------------------
 class ControlHub(FramelessWindow):
+    titleBar: CustomTitleBar
+
     # (latest_tag_or_None, was_manual). Emitted from the update-check worker
     # thread; Qt queues it onto the GUI thread automatically.
     update_checked = Signal(object, bool)
@@ -4046,12 +4086,15 @@ class ControlHub(FramelessWindow):
         # Lock the window's hard minimum to the layout's real minimum (driven by
         # the fixed-size INPUT MONITOR tab). This guarantees the input buttons
         # always fit and no scrollbar can ever appear.
-        m = self.layout().minimumSize()
+        layout = self.layout()
+        if layout is None:
+            raise RuntimeError("ControlHub layout has not been initialized")
+        m = layout.minimumSize()
         self.setMinimumSize(m.width(), m.height())
 
     def _vline(self):
         f = QFrame(); f.setObjectName("vsep"); f.setFixedWidth(1)
-        f.setFrameShape(QFrame.NoFrame)
+        f.setFrameShape(QFrame.Shape.NoFrame)
         return f
 
     def rotation_value(self):
@@ -4140,7 +4183,7 @@ class ControlHub(FramelessWindow):
 
     def _hide_to_tray(self):
         if self.tray is None: return
-        self.setWindowState(self.windowState() & ~Qt.WindowMinimized)
+        self.setWindowState(self.windowState() & ~Qt.WindowState.WindowMinimized)
         self.tray.show(); self.hide()
 
     def _restore_from_tray(self):
@@ -4148,7 +4191,8 @@ class ControlHub(FramelessWindow):
         self.showNormal(); self.raise_(); self.activateWindow()
 
     def _tray_activated(self, reason):
-        if reason in (QSystemTrayIcon.Trigger, QSystemTrayIcon.DoubleClick):
+        if reason in (QSystemTrayIcon.ActivationReason.Trigger,
+                      QSystemTrayIcon.ActivationReason.DoubleClick):
             self._restore_from_tray()
 
     def _quit_app(self):
@@ -4157,7 +4201,7 @@ class ControlHub(FramelessWindow):
         QApplication.quit()
 
     def changeEvent(self, e):
-        if e.type() == QEvent.WindowStateChange and self.isMinimized() \
+        if e.type() == QEvent.Type.WindowStateChange and self.isMinimized() \
                 and global_settings.get("minimize_to_tray", False) and self.tray is not None:
             QTimer.singleShot(0, self._hide_to_tray)
         super().changeEvent(e)
@@ -4175,8 +4219,9 @@ class ControlHub(FramelessWindow):
 
     def _tick(self):
         cur = self.settings.stack.currentWidget()
-        if hasattr(cur, "refresh"):
-            try: cur.refresh()
+        refresh = getattr(cur, "refresh", None)
+        if callable(refresh):
+            try: refresh()
             except Exception: pass
         self.telemetry.refresh()
         conn = bool(state["connected"])
