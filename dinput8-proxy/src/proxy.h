@@ -12,6 +12,7 @@
 #include <windows.h>
 #include <dinput.h>
 #include "lut.h"
+#include "pedal_inversion.h"
 
 // ---------------------------------------------------------------------------
 // Effect parameter patching
@@ -232,7 +233,13 @@ public:
     LWH_FWD(SetProperty, (REFGUID a, LPCDIPROPHEADER b), (a, b))
     LWH_FWD(Acquire, (), ())
     LWH_FWD(Unacquire, (), ())
-    LWH_FWD(GetDeviceState, (DWORD a, LPVOID b), (a, b))
+    HRESULT STDMETHODCALLTYPE GetDeviceState(DWORD size, LPVOID state) override
+    {
+        const HRESULT hr = real_->GetDeviceState(size, state);
+        if (SUCCEEDED(hr) && state && size >= sizeof(LONG))
+            LwhApplyPedalInversion(state, size);
+        return hr;
+    }
     LWH_FWD(GetDeviceData, (DWORD a, LPDIDEVICEOBJECTDATA b, LPDWORD c, DWORD d), (a, b, c, d))
     LWH_FWD(SetDataFormat, (LPCDIDATAFORMAT a), (a))
     LWH_FWD(SetEventNotification, (HANDLE a), (a))
