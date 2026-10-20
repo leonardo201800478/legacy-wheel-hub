@@ -399,10 +399,10 @@ def set_active_lut(path, exe_path=None):
 
 
 def set_active_pedal_inversion(profile, exe_path=None):
-    """Publish per-game DirectInput pedal flags and explicit axis byte offsets.
+    """Publish per-game pedal flags and semantic DirectInput axis selections.
 
-    Offsets stay disabled (-1) until identified for the target game's actual
-    DirectInput data format. SDL axis indexes are not DirectInput byte offsets.
+    The proxy resolves each selected axis against the game's actual DIDATAFORMAT;
+    SDL axis indexes are not DirectInput byte offsets.
     """
     if winreg is None or not exe_path:
         return
@@ -414,15 +414,14 @@ def set_active_pedal_inversion(profile, exe_path=None):
                                   ("brake", "Brake"),
                                   ("clutch", "Clutch")):
                 enabled = 1 if profile.get("invert_" + pedal, False) else 0
-                offset = profile.get("pedal_axis_" + pedal + "_offset", -1)
+                axis = profile.get("pedal_axis_" + pedal + "_axis", -1)
                 minimum = profile.get("pedal_axis_" + pedal + "_min", 0)
                 maximum = profile.get("pedal_axis_" + pedal + "_max", 65535)
-                # REG_DWORD stores signed values using their two's-complement
-                # representation; -1 is the explicit "not mapped" sentinel.
+                # REG_DWORD stores -1 as 0xFFFFFFFF ("not mapped").
                 winreg.SetValueEx(key, "Invert" + prefix, 0, winreg.REG_DWORD,
                                   int(enabled))
-                winreg.SetValueEx(key, prefix + "Offset", 0, winreg.REG_DWORD,
-                                  int(offset) & 0xFFFFFFFF)
+                winreg.SetValueEx(key, prefix + "Axis", 0, winreg.REG_DWORD,
+                                  int(axis) & 0xFFFFFFFF)
                 winreg.SetValueEx(key, prefix + "Min", 0, winreg.REG_DWORD,
                                   int(minimum) & 0xFFFFFFFF)
                 winreg.SetValueEx(key, prefix + "Max", 0, winreg.REG_DWORD,
@@ -436,12 +435,10 @@ def profile_needs_proxy(profile):
     profile = profile or {}
     if profile.get("lut_enabled"):
         return True
-    # Pedal inversion requires both an enabled pedal and a known DirectInput
-    # byte offset. A saved checkbox alone must not install a proxy that cannot
-    # perform the requested transformation.
+    # Inversion needs an enabled pedal and a selected DirectInput semantic axis.
     for pedal in ("throttle", "brake", "clutch"):
         try:
-            mapped = int(profile.get("pedal_axis_" + pedal + "_offset", -1)) >= 0
+            mapped = 0 <= int(profile.get("pedal_axis_" + pedal + "_axis", -1)) <= 7
         except (TypeError, ValueError):
             mapped = False
         if mapped and bool(profile.get("invert_" + pedal, False)):
@@ -1250,6 +1247,8 @@ PROFILE_DEFAULTS = {"angle": 900, "di_gain": 101, "di_spring": 0, "di_damper": 0
                     "invert_throttle": False, "invert_brake": False, "invert_clutch": False,
                     "pedal_axis_throttle_offset": -1, "pedal_axis_brake_offset": -1,
                     "pedal_axis_clutch_offset": -1,
+                    "pedal_axis_throttle_axis": -1, "pedal_axis_brake_axis": -1,
+                    "pedal_axis_clutch_axis": -1,
                     "pedal_axis_throttle_min": 0, "pedal_axis_brake_min": 0,
                     "pedal_axis_clutch_min": 0,
                     "pedal_axis_throttle_max": 65535, "pedal_axis_brake_max": 65535,
@@ -1951,16 +1950,20 @@ class WheelWidget(QWidget):
 
 
 class PedalBar(QWidget):
-    def __init__(self, label, color, pedal, on_invert):
+    AXES = ((0, "X"), (1, "Y"), (2, "Z"), (3, "Rx"),
+            (4, "Ry"), (5, "Rz"), (6, "Slider 0"), (7, "Slider 1"))
+
+    def __init__(self, label, color, pedal, on_invert, on_axis=None):
         super().__init__()
         self.value = 0.0; self.disp = 0.0
         self.label = label; self.color = QColor(color)
-        self.pedal = pedal; self.on_invert = on_invert
+        self.pedal = pedal; self.on_invert = on_invert; self.on_axis = on_axis
         self.inverted = False
+        self.axis_index = -1
         self.enabled_axis = True
         self.setMinimumSize(58, 150)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.setToolTip(tr("pedal.invert"))
+        self.setToolTip("Clique para configurar inversão e eixo DirectInput.")
 
     def mousePressEvent(self, e):
         if e.button() in (Qt.MouseButton.LeftButton, Qt.MouseButton.RightButton):
@@ -1968,6 +1971,17 @@ class PedalBar(QWidget):
             action = menu.addAction(tr("pedal.invert"))
             action.setCheckable(True); action.setChecked(self.inverted)
             action.triggered.connect(lambda checked: self.on_invert(self.pedal, checked))
+            menu.addSeparator()
+            axis_menu = menu.addMenu("Eixo DirectInput")
+            none_action = axis_menu.addAction("Não mapeado")
+            none_action.setCheckable(True); none_action.setChecked(self.axis_index == -1)
+            none_action.triggered.connect(lambda: self.on_axis and self.on_axis(self.pedal, -1))
+            for axis_index, axis_name in self.AXES:
+                axis_action = axis_menu.addAction(axis_name)
+                axis_action.setCheckable(True)
+                axis_action.setChecked(self.axis_index == axis_index)
+                axis_action.triggered.connect(
+                    lambda checked=False, idx=axis_index: self.on_axis and self.on_axis(self.pedal, idx))
             menu.exec(e.globalPosition().toPoint())
             e.accept()
             return
@@ -2964,9 +2978,9 @@ class TelemetryPanel(QWidget):
         # Leave enough width for translated pedal names such as "ACELERADOR"
         # and "EMBREAGEM"; the bars themselves stay centered in each column.
         prow = QHBoxLayout(); prow.setSpacing(10); prow.setAlignment(Qt.AlignmentFlag.AlignHCenter)
-        self.clutch = PedalBar(tr("home.clutch"), "#60a5fa", "clutch", self._on_pedal_invert)
-        self.brake = PedalBar(tr("home.brake"), "#ff6b6b", "brake", self._on_pedal_invert)
-        self.throttle = PedalBar(tr("home.throttle"), "#5dc98a", "throttle", self._on_pedal_invert)
+        self.clutch = PedalBar(tr("home.clutch"), "#60a5fa", "clutch", self._on_pedal_invert, self._on_pedal_axis)
+        self.brake = PedalBar(tr("home.brake"), "#ff6b6b", "brake", self._on_pedal_invert, self._on_pedal_axis)
+        self.throttle = PedalBar(tr("home.throttle"), "#5dc98a", "throttle", self._on_pedal_invert, self._on_pedal_axis)
         for wdg in (self.clutch, self.brake, self.throttle):
             wdg.setFixedSize(86, 150)
             prow.addWidget(wdg)
@@ -2975,6 +2989,33 @@ class TelemetryPanel(QWidget):
         # center logic
         self._center_state = {"active": False, "near": 0, "deadline": 0.0}
         self._center_timer = QTimer(self); self._center_timer.timeout.connect(self._center_check)
+
+    def _on_pedal_axis(self, pedal, axis_index):
+        if main_window is None:
+            return
+        profile = global_settings["profiles"].setdefault(
+            global_settings["selected_profile"], dict(PROFILE_DEFAULTS))
+        profile["pedal_axis_" + pedal + "_axis"] = int(axis_index)
+        save_settings()
+        exe = profile.get("exe_path", "")
+        if exe:
+            set_active_pedal_inversion(profile, exe)
+        if exe and profile_needs_proxy(profile):
+            main_window.presets._install_for_profile(exe)
+        else:
+            still_needed = any(
+                other is not profile and profile_needs_proxy(other)
+                and os.path.normcase(other.get("exe_path", "")) == os.path.normcase(exe)
+                for other in global_settings["profiles"].values())
+            if exe and not still_needed:
+                uninstall_proxy_for(exe)
+        _defer_infobar(
+            "success" if int(axis_index) >= 0 else "warning",
+            "Eixo do pedal",
+            ("Eixo DirectInput salvo. Marque a inversão para aplicar no jogo."
+             if int(axis_index) >= 0 else "Mapeamento DirectInput removido."),
+            duration=3500, position=InfoBarPosition.TOP, parent=main_window)
+        self.refresh()
 
     def _on_pedal_invert(self, pedal, enabled):
         if main_window is None:
@@ -3054,6 +3095,9 @@ class TelemetryPanel(QWidget):
         self.throttle.inverted = bool(prof.get("invert_throttle", False))
         self.brake.inverted = bool(prof.get("invert_brake", False))
         self.clutch.inverted = bool(prof.get("invert_clutch", False))
+        self.throttle.axis_index = int(prof.get("pedal_axis_throttle_axis", -1))
+        self.brake.axis_index = int(prof.get("pedal_axis_brake_axis", -1))
+        self.clutch.axis_index = int(prof.get("pedal_axis_clutch_axis", -1))
         self.throttle.value = (255 - state["throttle"] if self.throttle.inverted else state["throttle"]) / 255.0
         self.brake.value = (255 - state["brake"] if self.brake.inverted else state["brake"]) / 255.0
         has_clutch = active_profile.get("clutch") is not None
