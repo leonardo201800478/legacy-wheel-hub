@@ -397,9 +397,53 @@ def set_active_lut(path, exe_path=None):
         pass
 
 
+
+def set_active_pedal_inversion(profile, exe_path=None):
+    """Publish per-game DirectInput pedal flags and explicit axis byte offsets.
+
+    Offsets stay disabled (-1) until identified for the target game's actual
+    DirectInput data format. SDL axis indexes are not DirectInput byte offsets.
+    """
+    if winreg is None or not exe_path:
+        return
+    profile = profile or {}
+    try:
+        key_path = rf"Software\LegacyWheelHub\Games\{_proxy_game_key(exe_path)}"
+        with winreg.CreateKey(winreg.HKEY_CURRENT_USER, key_path) as key:
+            for pedal, prefix in (("throttle", "Throttle"),
+                                  ("brake", "Brake"),
+                                  ("clutch", "Clutch")):
+                enabled = 1 if profile.get("invert_" + pedal, False) else 0
+                offset = profile.get("pedal_axis_" + pedal + "_offset", -1)
+                minimum = profile.get("pedal_axis_" + pedal + "_min", 0)
+                maximum = profile.get("pedal_axis_" + pedal + "_max", 65535)
+                # REG_DWORD stores signed values using their two's-complement
+                # representation; -1 is the explicit "not mapped" sentinel.
+                winreg.SetValueEx(key, "Invert" + prefix, 0, winreg.REG_DWORD,
+                                  int(enabled))
+                winreg.SetValueEx(key, prefix + "Offset", 0, winreg.REG_DWORD,
+                                  int(offset) & 0xFFFFFFFF)
+                winreg.SetValueEx(key, prefix + "Min", 0, winreg.REG_DWORD,
+                                  int(minimum) & 0xFFFFFFFF)
+                winreg.SetValueEx(key, prefix + "Max", 0, winreg.REG_DWORD,
+                                  int(maximum) & 0xFFFFFFFF)
+    except Exception:
+        # Registry publication is best-effort; never interrupt the UI.
+        pass
+
+
 def profile_needs_proxy(profile):
     profile = profile or {}
-    return bool(profile.get("lut_enabled"))
+    if profile.get("lut_enabled"):
+        return True
+    # Pedal inversion requires both an enabled pedal and a known DirectInput
+    # byte offset. A saved checkbox alone must not install a proxy that cannot
+    # perform the requested transformation.
+    return any(
+        bool(profile.get("invert_" + pedal, False))
+        and int(profile.get("pedal_axis_" + pedal + "_offset", -1)) >= 0
+        for pedal in ("throttle", "brake", "clutch")
+    )
 
 
 def profile_has_driver_pedal_settings(profile):
@@ -1201,6 +1245,12 @@ PROFILE_DEFAULTS = {"angle": 900, "di_gain": 101, "di_spring": 0, "di_damper": 0
                     "di_center": 0, "di_ramp": DEFAULT_RAMP, "di_persist": False,
                     "exe_path": "", "logo_exe": "", "lut_file": "", "lut_enabled": False,
                     "invert_throttle": False, "invert_brake": False, "invert_clutch": False,
+                    "pedal_axis_throttle_offset": -1, "pedal_axis_brake_offset": -1,
+                    "pedal_axis_clutch_offset": -1,
+                    "pedal_axis_throttle_min": 0, "pedal_axis_brake_min": 0,
+                    "pedal_axis_clutch_min": 0,
+                    "pedal_axis_throttle_max": 65535, "pedal_axis_brake_max": 65535,
+                    "pedal_axis_clutch_max": 65535,
                     "driver_pedal_inversion_configured": False}
 
 
@@ -2932,6 +2982,8 @@ class TelemetryPanel(QWidget):
         profile["driver_pedal_inversion_configured"] = True
         save_settings()
         exe = profile.get("exe_path", "")
+        if exe:
+            set_active_pedal_inversion(profile, exe)
         _defer_infobar("warning", tr("pedal.invert"), tr("pedal.standalone_pending"),
                        duration=7000, position=InfoBarPosition.TOP, parent=main_window)
         if profile_needs_proxy(profile):
@@ -3337,6 +3389,7 @@ class LutTab(QWidget):
             fn = pp.get("lut_file", "")
             on = bool(pp.get("lut_enabled", False))
             set_active_lut(os.path.join(_lut_dir(), fn) if (on and fn) else "", exe)
+            set_active_pedal_inversion(pp, exe)
         # Legacy global key: mirror the profile actually shown right now, for
         # any proxy DLL that hasn't been reinstalled since the per-game update.
         prof = self._cur_prof()
