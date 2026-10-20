@@ -189,23 +189,25 @@ Foram analisadas duas novas capturas de aproximadamente 60 segundos. O script ag
 O relatório detalhado e as limitações estão em [Análise das capturas Raw Input do G27 — 2026-10-20](G27_RAW_INPUT_CAPTURE_20261020.md). Próxima etapa: recuperar o descritor HID e decodificar os campos antes de tentar identificar os bytes de cada eixo/pedal.
 
 
-## Relato de teste no MAME: inversão não observada (2026-10-20)
+## Teste funcional da inversão no MAME: Legacy Wheel Hub sem efeito (2026-10-20)
 
-O usuário informa que, nos testes anteriores, a inversão dos pedais não ocorreu no MAME, apesar das alterações no perfil XML. Portanto, a inversão pelo perfil deve ser tratada como **não confirmada / aparentemente ineficaz no cenário testado**, e não como funcionalidade corrigida.
+O usuário esclareceu que o MAME já está configurado para receber a inversão feita pelo Logitech Gaming Software (LGS) e que esse fluxo funciona com a configuração original do LGS. Nos testes em que a alteração é feita pelo Legacy Wheel Hub, a inversão não ocorre.
 
-### Interpretação
+**Conclusão funcional:** a alteração atual feita pelo Legacy Wheel Hub não está reproduzindo o efeito da configuração original do LGS. Deve ser tratada como implementação ineficaz, não como recurso corrigido. Não é necessário reabrir a hipótese de que o MAME esteja configurado incorretamente; o problema a investigar é a diferença entre a configuração LGS funcional e a alteração produzida pelo Hub.
 
-- A presença de `Sign="-1"` no XML não comprova que o LGS carregou o perfil do MAME ou aplicou a opção.
-- As capturas SDL e Raw Input registram entrada observada por APIs diferentes; não provam qual valor o MAME recebe após o processamento do LGS/driver.
-- Ainda não há evidência que identifique o mecanismo interno usado pelo LGS para aplicar `AxisDynamics` ou a inversão.
+### O que ainda não sabemos
 
-### Próximo experimento controlado
+- Se o XML editado pelo Hub é a fonte de configuração que o LGS realmente consome para aplicar `AxisDynamics`/inversão.
+- Se o LGS normaliza, reescreve, ignora ou complementa esses campos com estado armazenado em outro local.
+- Qual mecanismo interno o LGS usa para transformar a entrada entregue ao jogo.
+- Em que camada a inversão funcional do LGS aparece. As capturas SDL e Raw Input disponíveis não comprovam, por si só, o valor final que o MAME recebe.
 
-1. Registrar o estado original do perfil XML e confirmar no LGS qual perfil está ativo para o executável do MAME.
-2. No MAME, anotar o comportamento do eixo/pedal sem alterar outras opções.
-3. Alterar apenas um `Sign` no perfil, salvar, reabrir o LGS e confirmar se o perfil permanece ativo.
-4. Repetir exatamente o mesmo teste no MAME.
-5. Comparar com o painel de controladores do Windows e com o diagnóstico do Hub, anotando se a inversão aparece em alguma camada.
-6. Se não houver mudança, não continuar alterando sinais aleatoriamente: investigar como o LGS aplica o perfil (logs, diferenças de configuração e interfaces documentadas) e avaliar uma solução de entrada que o MAME realmente consuma.
+### Plano de investigação
 
-Não afirmar que a inversão foi aplicada pelo driver até que um teste isole essa camada. A observação atual é um relato do usuário, não uma reprodução independente.
+1. Comparar um perfil original funcional exportado pelo LGS com o mesmo perfil após uma única inversão feita pela interface oficial do LGS; identificar todas as diferenças persistidas, não apenas `Sign` no XML.
+2. Comparar esses artefatos com o perfil produzido pelo Legacy Wheel Hub e verificar se o Hub preserva a estrutura, os campos e a semântica esperados pelo LGS.
+3. Investigar documentação e evidências reproduzíveis sobre o carregamento de perfis e o mecanismo de aplicação do LGS; não presumir que editar XML seja suficiente.
+4. Projetar um teste A/B usando o mesmo executável, eixo e ação física: configuração original do LGS funcional versus configuração equivalente produzida pelo Hub.
+5. Só depois de identificar a diferença, corrigir a implementação e validar no MAME. Se o LGS depender de estado ou de uma interface não representada no XML, documentar essa dependência e avaliar uma via alternativa que o MAME efetivamente consuma.
+
+O relato do usuário estabelece o resultado funcional do teste; a causa interna ainda precisa ser investigada. Nenhuma conclusão sobre o mecanismo do driver deve ser apresentada como comprovada sem evidência adicional.
