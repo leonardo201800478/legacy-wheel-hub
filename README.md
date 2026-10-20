@@ -49,6 +49,12 @@ and you'd get the curve twice.
 **Online games:** this drops a `dinput8.dll` next to the game executable.
 Anti-cheat may not like that. Your call, your risk.
 
+## Direção do projeto
+
+Este fork amplia as funções do projeto de origem e busca reproduzir, para o G27, recursos úteis do Logitech Gaming Software 5 sem depender do LGS. A inversão efetiva dos pedais e o mapeamento de botões do volante para teclas do teclado são objetivos em desenvolvimento, não funções que devam ser consideradas concluídas apenas porque aparecem nas configurações. A implementação deve usar componentes compatíveis com Windows 11 e preservar o Force Feedback e as proteções de segurança do sistema.
+
+- [Objetivos e roteiro de paridade com LGS 5 para G27 no Windows 11](docs/ROADMAP_LGS5_PARITY_G27_WINDOWS11.md)
+
 ## Documentação técnica
 
 - [Arquitetura dos drivers do G27 no Windows, HID, DirectInput, LGS e plano de investigação](docs/LOGITECH_G27_WINDOWS_DRIVER_ARCHITECTURE.md)
