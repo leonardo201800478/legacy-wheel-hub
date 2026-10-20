@@ -60,3 +60,20 @@ O CMake já define `NOMINMAX` e `WIN32_LEAN_AND_MEAN` para o alvo, e esses macro
 ## Critério de aceitação
 
 Para cada pedal configurado, com inversão ativada, um teste deve demonstrar que o valor entregue ao jogo é `min + max - valor_original` nos limites reais do objeto; pedais não configurados, volante, botões e FFB devem permanecer inalterados. O teste deve identificar explicitamente o backend de entrada usado pelo executável.
+
+## Atualização posterior da auditoria — diagnóstico implementado
+
+Foi adicionado um diagnóstico opt-in em `dinput8-proxy/src/proxy.h`:
+
+- Ativação somente quando o processo herda `LWH_DI_FORMAT_DEBUG=1`.
+- Registra o HRESULT de `SetDataFormat`, os metadados do `DIDATAFORMAT` e os objetos (GUID, `dwOfs`, `dwType`, `dwFlags`).
+- Limita a lista a 256 objetos por chamada e respeita `dwObjSize` como stride.
+- Não registra valores de eixo em tempo real e não altera o buffer de eixos.
+- A documentação de compilação e execução está em [DIAGNOSTICS_DIRECTINPUT_DATA_FORMAT.md](DIAGNOSTICS_DIRECTINPUT_DATA_FORMAT.md).
+
+Commits relacionados:
+- `c2d9b2a06711fc35fd73672b1dfbf6fe659cc5d0` — diagnóstico opt-in inicial.
+- `f340f08455fb5cec787a26a59a48d8d08da1d920` — respeitar o stride dos objetos.
+- `73579c6b5ae90bd2c293a57b7e6d0c8a02621bdf` — validar o cabeçalho antes de ler os campos.
+
+A implementação ainda precisa ser recompilada e exercitada em um processo de teste. Não há confirmação de runtime até esse teste ocorrer.
