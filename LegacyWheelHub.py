@@ -439,11 +439,14 @@ def profile_needs_proxy(profile):
     # Pedal inversion requires both an enabled pedal and a known DirectInput
     # byte offset. A saved checkbox alone must not install a proxy that cannot
     # perform the requested transformation.
-    return any(
-        bool(profile.get("invert_" + pedal, False))
-        and int(profile.get("pedal_axis_" + pedal + "_offset", -1)) >= 0
-        for pedal in ("throttle", "brake", "clutch")
-    )
+    for pedal in ("throttle", "brake", "clutch"):
+        try:
+            mapped = int(profile.get("pedal_axis_" + pedal + "_offset", -1)) >= 0
+        except (TypeError, ValueError):
+            mapped = False
+        if mapped and bool(profile.get("invert_" + pedal, False)):
+            return True
+    return False
 
 
 def profile_has_driver_pedal_settings(profile):
