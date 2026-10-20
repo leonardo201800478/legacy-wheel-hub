@@ -16,12 +16,12 @@ Não é seguro preencher os offsets com os índices SDL: os offsets DirectInput 
 ## Código adicionado
 
 - `pedal_inversion.py`: transformação matemática isolada e testes unitários Python.
-- `dinput8-proxy/src/pedal_inversion.h`: adaptador nativo que lê flags, offsets e limites do Registro por executável e inverte um valor `LONG` no buffer retornado por DirectInput.
+- `dinput8-proxy/src/pedal_inversion.h`: adaptador nativo que lê flags, seleção semântica de eixo e limites do Registro por executável; o proxy resolve X/Y/Z/Rx/Ry/Rz/Slider 0/1 para os offsets reais do formato DirectInput solicitado pelo jogo.
 - `dinput8-proxy/src/proxy.h`: `GetDeviceState` encaminha primeiro para o dispositivo real e aplica a transformação configurada ao buffer de saída. As outras chamadas COM e o pipeline de FFB/LUT permanecem encaminhados ao objeto real.
 - `dinput8-proxy/CMakeLists.txt`: definição inicial de build MSVC para Windows.
 - `LegacyWheelHub.py`: publica a configuração por jogo em `HKCU\Software\LegacyWheelHub\Games\<chave-do-executável>`.
 
-A transformação matemática é `min + max - valor`. O adaptador verifica se o offset está alinhado, cabe inteiramente no buffer e se o valor está dentro dos limites configurados; caso contrário, não altera esse campo. A inversão permanece inativa quando o offset está em `-1`.
+A transformação matemática é `min + max - valor`. O proxy identifica os offsets dos eixos semânticos no `DIDATAFORMAT` entregue pelo jogo e aplica a inversão apenas ao eixo escolhido, se o offset couber no buffer e o valor estiver dentro dos limites configurados. A inversão permanece inativa quando o eixo está em “Não mapeado”.
 
 ## Limitações que ainda impedem considerar a função concluída
 
@@ -33,8 +33,8 @@ A transformação matemática é `min + max - valor`. O adaptador verifica se o 
 
 ## Próxima etapa obrigatória
 
-1. Criar um diagnóstico DirectInput para registrar, manualmente, o `DIDATAFORMAT` solicitado pelo jogo e os objetos/offsets usados.
-2. Usar o diagnóstico para implementar uma seleção de eixo por pedal na UI, com validação do formato e limites reais.
+1. Selecionar no menu de contexto de cada pedal o eixo DirectInput correspondente ao pedal no jogo-alvo.
+2. Validar no MAME se os valores do eixo selecionado estão no intervalo configurado; os limites padrão são 0–65535.
 3. Compilar o proxy nas arquiteturas suportadas e integrá-lo ao empacotamento de release sem substituir DLLs existentes por builds não validados.
 4. Testar no MAME se a API interceptada é de fato o caminho de entrada consumido; se não for, escolher uma camada compatível com a API real sem desativar as proteções do Windows.
 5. Confirmar que volante, botões, eixos não mapeados e Force Feedback continuam funcionando.
