@@ -8,6 +8,14 @@ Também não foi localizado no branch `main` um projeto de instalador ou uma con
 
 Isso significa que não é possível demonstrar, a partir do repositório público atual, como foram produzidas as quatro DLLs que o Kaspersky removeu do computador. A ausência de evidência de empacotamento não prova que os binários sejam maliciosos nem que sejam falsos positivos.
 
+## Release upstream encontrada
+
+O fork tem como repositório pai `Sadooo27/legacy-wheel-hub`. Esse repositório possui uma release `v1.1.5` publicada em 2026-09-07, com o asset `LegacyWheelHub_Setup.exe` de 37.676.297 bytes e digest SHA-256 publicado pelo GitHub `6209121ce84d2761f0e73ca2b18403efcb75fffe1919cdaef56d02f80a9d69bc`.
+
+- [Release upstream v1.1.5](https://github.com/Sadooo27/legacy-wheel-hub/releases/tag/v1.1.5)
+
+A existência desse asset não comprova que seja a versão instalada no computador, nem que contenha os quatro arquivos detectados. O digest é um valor do metadata da release; só deve ser usado para comparação depois de obter o arquivo candidato da fonte oficial e calcular seu hash localmente. O fork também contém alterações posteriores na aplicação, portanto não se deve tratar o instalador upstream como pacote equivalente à versão atual do fork.
+
 ## Compilação de proxy verificada
 
 Workflow: [Build DirectInput proxy](https://github.com/leonardo201800478/legacy-wheel-hub/actions/workflows/build-dinput8-proxy.yml)
