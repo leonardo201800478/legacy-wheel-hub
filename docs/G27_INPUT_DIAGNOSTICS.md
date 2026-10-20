@@ -136,3 +136,40 @@ Durante a captura, gire o volante lentamente de batente a batente, mantenha-o pa
 6. Compare os relatórios e guarde o JSON/CSV de cada cenário. Não conclua que o perfil está ativo só por encontrar um XML.
 
 Não compartilhe os arquivos sem revisar caminhos locais e identificadores do dispositivo.
+
+
+## Análise das capturas enviadas ao repositório (2026-10-20)
+
+Arquivos analisados:
+- `g27-diagnostics/g27_report_20261020_094107.json` e CSV correspondente.
+- `g27-diagnostics/g27_report_20261020_094858.json` e CSV correspondente.
+- `g27-diagnostics/g27_raw_hid_20261020_094750.json` e CSV correspondente.
+
+### Resultados SDL
+
+| Captura | Amostras | Duração aproximada | Taxa efetiva calculada |
+|---|---:|---:|---:|
+| Com calibração | 4.377 | 89,57 s | 48,9 amostras/s |
+| Sem calibração | 8.313 | 87,21 s | 95,3 amostras/s |
+
+A taxa efetiva é calculada a partir das linhas e do tempo decorrido; não deve ser tratada como frequência USB do volante.
+
+Na primeira captura, os eixos SDL 2, 3 e 5 percorreram de `-1` a aproximadamente `+1`, com mudanças observadas durante a calibração. O relatório associa esses eixos ao acelerador, freio e embreagem, respectivamente, e classifica a confiança como forte. O eixo 1 permaneceu em `-0.12796` nessa captura; o eixo 4 permaneceu em `-0.4679`. O valor inicial de eixo 5 no CSV (`-1`) não coincide com o baseline de eixo 5 no JSON (`+0.99997`), portanto o JSON não deve ser usado sozinho para reconstruir a sequência temporal completa dessa captura.
+
+Na segunda captura, todos os cinco eixos variaram ao menos uma vez; os eixos 1, 2, 3 e 5 atingiram aproximadamente `-1` e `+1`. O eixo 4 começou em `0` e passou uma vez a `-0.4679`, permanecendo estável pelo restante da gravação. Esse comportamento pode ser estado inicial da API ou um eixo não ativo, mas a captura não permite decidir qual hipótese é correta. Todos os 23 botões apresentaram pelo menos algumas amostras ativas; o hat registrou valores direcionais em X e Y.
+
+### Resultados Raw Input
+
+O JSON reporta 7.359 relatórios em aproximadamente 41,05 segundos (cerca de 179 relatórios/s agregados). O inventário inclui o caminho HID `VID_046D&PID_C29B`, compatível com a identificação esperada para o G27. Entretanto, a captura registrou coleções de vários dispositivos HID e o relatório não permite atribuir todos os 7.359 relatórios ao G27 sem agrupar o CSV por `device_path`.
+
+**Problema de qualidade de dados identificado:** apesar de os caminhos conterem VID/PID, os campos `vendor_id`, `product_id`, `usage_page` e `usage` foram gravados como zero para os dispositivos HID. A leitura da estrutura `RIDI_DEVICE_INFO` precisa ser corrigida/verificada antes de confiar nesses campos. A enumeração por caminho de dispositivo ainda fornece pistas, mas não substitui o descritor HID nem a decodificação dos relatórios.
+
+### Conclusões e próximos passos
+
+1. A SDL vê o volante como `G27 Racing Wheel`, GUID `0300be956d0400009bc2000000000000`, com 5 eixos, 23 botões e 1 hat.
+2. A correspondência provisória mais forte é: eixo SDL 1 = direção; eixos 2, 3 e 5 = pedais conforme a calibração guiada; eixo 4 = não identificado.
+3. As capturas não demonstram que uma inversão LGS esteja ativa nem identificam como o LGS envia configurações ao driver.
+4. Corrigir os metadados Raw Input e adicionar resumo por dispositivo/caminho e tamanho de relatório.
+5. Decodificar o descritor HID e correlacionar os bytes do G27 com os movimentos controlados; depois comparar a mesma ação antes/depois de uma única mudança de perfil.
+
+Estes resultados foram calculados a partir dos arquivos enviados ao repositório; não representam uma execução independente no equipamento.
