@@ -1,3 +1,5 @@
+- [Comparação dos XMLs LGS/Hub (20/10/2026)](G27_LGS_HUB_INVERSION_XML_COMPARISON_20261020.md)
+
 # Diagnóstico de entradas do Logitech G27 / DFGT
 
 A ferramenta coleta evidências para mapear os eixos que o Windows expõe via SDL/Pygame, registrar pedais e botões e comparar os valores encontrados no XML do Logitech Gaming Software (LGS).
