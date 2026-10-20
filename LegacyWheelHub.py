@@ -189,6 +189,7 @@ class InversionDiagnosticsLogger:
         self._lock = threading.Lock()
         self._last_report = None
         self._last_sample_at = 0.0
+        self._missing_logged = False
         self.path = None
         try:
             base = os.environ.get("LOCALAPPDATA") or os.environ.get("APPDATA") or os.path.expanduser("~")
@@ -218,6 +219,11 @@ class InversionDiagnosticsLogger:
                     stream.write(line + "\n")
         except Exception:
             pass
+
+    def device_missing(self):
+        if not self._missing_logged:
+            self.event("device_not_found")
+            self._missing_logged = True
 
     def log_device_inventory(self):
         devices = []
@@ -1755,12 +1761,13 @@ def open_device():
     prof, pid = _detect_profile()
     if prof is None:
         if inversion_diagnostics:
-            inversion_diagnostics.event("device_not_found")
+            inversion_diagnostics.device_missing()
         dev = None; state["connected"] = False; return False
     try:
         d = hid.device(); d.open(VID, pid); d.set_nonblocking(1)
         dev = d; active_profile = prof; state["connected"] = True
         if inversion_diagnostics:
+            inversion_diagnostics._missing_logged = False
             inversion_diagnostics.event("device_connected", device=prof.get("name"),
                                         vendor_id=f"0x{VID:04X}", product_id=f"0x{pid:04X}",
                                         pedal_invert=prof.get("pedal_invert"),
