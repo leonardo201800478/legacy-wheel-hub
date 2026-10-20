@@ -72,3 +72,18 @@ Arquivos gerados por padrão em .\g27-diagnostics\:
 ## Próxima etapa
 
 Se SDL/Pygame não fornecer evidências suficientes, adicionar instrumentação Windows dedicada para enumerar dispositivos e eixos DirectInput, ler Raw Input/HID quando compatível e comparar entrada observada com Sign no perfil LGS. Essa etapa deve ser orientada pelos logs reais, sem presumir que índices SDL correspondam aos eixos LGS.
+
+
+## Registro preliminar de calibração (relato do usuário, 2026-10-20)
+
+Primeira execução reportada para o G27:
+
+| Pedal | Eixo SDL (numeração exibida, iniciada em 1) | Variação | Direção observada |
+|---|---:|---:|---|
+| Acelerador | 2 | 2.000 | decreasing |
+| Freio | 3 | 2.000 | decreasing |
+| Embreagem | 5 | 2.000 | decreasing |
+
+A amplitude 2.000 é compatível com uma excursão aproximada de +1 a -1 no eixo normalizado. Os três pedais foram detectados em eixos SDL distintos, todos decrescentes durante a pressão. Isso ainda não confirma que a inversão de um perfil LGS foi aplicada pelo driver, nem mapeia diretamente os eixos SDL aos nomes `R`/`Z` do XML.
+
+A amostra final reportada foi `[-0.12796, 0.21429, 0.99997, -0.4679, 0.99997]`. Como ela é apenas um instante e não há informação sobre a posição de cada pedal nesse instante, não deve ser usada para concluir se os pedais estavam em repouso ou invertidos. O próximo passo é examinar o JSON completo (principalmente baseline, minimum e maximum de cada pedal) e o CSV, além do XML LGS correspondente ao executável testado. Este registro é evidência de uma execução reportada, não um teste independente reproduzido pelos mantenedores.
