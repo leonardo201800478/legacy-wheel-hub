@@ -52,9 +52,8 @@ Anti-cheat may not like that. Your call, your risk.
 ## Documentação técnica
 
 - [Arquitetura dos drivers do G27 no Windows, HID, DirectInput, LGS e plano de investigação](docs/LOGITECH_G27_WINDOWS_DRIVER_ARCHITECTURE.md)
-- [Ferramenta de diagnóstico de eixos, pedais e logs do G27](docs/G27_INPUT_DIAGNOSTICS.md)
+- [Ferramentas manuais de diagnóstico de eixos e pedais do G27](docs/G27_INPUT_DIAGNOSTICS.md)
 - [Captura avançada de relatórios HID via Windows Raw Input](tools/g27_windows_raw_input_diagnostics.py)
-- [Logs automáticos para investigar inversão de pedais](docs/G27_INPUT_DIAGNOSTICS.md#registro-automático-de-diagnóstico-da-inversão-legacy-wheel-hub)
 
 ## License
 
