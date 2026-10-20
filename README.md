@@ -32,7 +32,7 @@ SmartScreen will warn about the installer being unsigned. More info → Run anyw
 - Auto-load on connect, start with Windows, tray minimize
 - EN / TR / DE, light and dark
 
-Settings go to `%APPDATA%\Legacy Wheel Hub\settings.json`.
+Settings go to `%APPDATA%\\Legacy Wheel Hub\\settings.json`.
 
 ## LUT
 
@@ -49,6 +49,10 @@ and you'd get the curve twice.
 **Online games:** this drops a `dinput8.dll` next to the game executable.
 Anti-cheat may not like that. Your call, your risk.
 
+## Documentação técnica
+
+- [Arquitetura dos drivers do G27 no Windows, HID, DirectInput, LGS e plano de investigação](docs/LOGITECH_G27_WINDOWS_DRIVER_ARCHITECTURE.md)
+
 ## License
 
 GPL-3.0, because PySide6-Fluent-Widgets is. Full text in `LICENSE`, or
@@ -56,12 +60,11 @@ https://www.gnu.org/licenses/gpl-3.0.txt
 
 ## Disclaimer
 
-
 Not affiliated with Logitech. "Logitech", "Driving Force" and "G27" are their
 trademarks, used here to say what hardware this works with. Talks to the wheel
 over USB HID and the driver's own registry settings. No Logitech code or files
 are redistributed. Use at your own risk.
 
-
 ## Acknowledgments
+
 Developed with assistance from [Claude](https://claude.ai).
