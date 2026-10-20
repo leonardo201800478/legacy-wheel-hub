@@ -397,16 +397,21 @@ def set_active_lut(path, exe_path=None):
 
 
 def set_logitech_profile_pedal_inversions(exe_path, profile):
-    """Set pedal-axis signs in the matching Logitech Gaming Software profile.
+    """Apply pedal inversion to the matching Logitech Gaming Software profile.
 
-    LGS profile XML stores axis direction in AxisDynamics/AxisDef Sign.
-    Pedal-to-axis mappings are selected explicitly in the app because the
-    profile's numeric Mapping IDs do not establish which pedal an axis is.
-    This edits the installed LGS profile itself; the game still reads input
-    from the Logitech driver, with no pedal-input proxy hook.
+    LGS stores per-axis direction as a Sign attribute on AxisDynamics elements
+    directly under the device Assignments node (for example Axis="R",
+    Sign="-1"). Some profile variants may wrap AxisDef elements inside an
+    AxisDynamics container, so both layouts are handled without creating an
+    invalid nested AxisDef in the common LGS format.
+
+    This edits the installed LGS XML profile. It does not transform input
+    values in the Hub and does not prove that every LGS/driver version reloads
+    the edited profile immediately.
     """
     if not exe_path:
         return False
+
     game_exe = os.path.basename(resolve_game_exe(exe_path) or exe_path).casefold()
     appdata_roots = [os.environ.get("LOCALAPPDATA"), os.environ.get("APPDATA")]
     profile_dirs = []
@@ -415,12 +420,27 @@ def set_logitech_profile_pedal_inversions(exe_path, profile):
             os.path.join(root, "Logitech", "Logitech Gaming Software", "profiles"),
             os.path.join(root, "Logitech", "Gaming Software", "profiles"),
         ))
+
+    pedals = ("throttle", "brake", "clutch")
     axis_for_pedal = {
-        pedal: str((profile or {}).get("lgs_axis_" + pedal, "")).upper()
-        for pedal in ("throttle", "brake", "clutch")
+        pedal: str((profile or {}).get("lgs_axis_" + pedal, "")).strip().upper()
+        for pedal in pedals
     }
     if not any(axis_for_pedal.values()):
         return False
+
+    def local(tag):
+        """Return an XML local name, ignoring an optional namespace."""
+        return tag.rsplit("}", 1)[-1]
+
+    def valid_axis(axis):
+        """Accept simple axis identifiers while rejecting malformed XML data."""
+        return bool(axis) and len(axis) <= 8 and axis.replace("_", "").isalnum()
+
+    def desired_sign(pedal):
+        """Map the UI inversion checkbox to the LGS axis Sign convention."""
+        return "-1" if bool((profile or {}).get("invert_" + pedal, False)) else "1"
+
     found = False
     for profile_dir in dict.fromkeys(profile_dirs):
         if not os.path.isdir(profile_dir):
@@ -436,48 +456,81 @@ def set_logitech_profile_pedal_inversions(exe_path, profile):
                 except (ET.ParseError, OSError):
                     continue
 
-                def local(tag):
-                    return tag.rsplit("}", 1)[-1]
-
-                targets = [child.text.strip().casefold()
-                           for target in root.iter() if local(target.tag) == "Target"
-                           for child in target if local(child.tag) == "Name" and child.text]
+                targets = [
+                    child.text.strip().casefold()
+                    for target in root.iter()
+                    if local(target.tag) == "Target"
+                    for child in target
+                    if local(child.tag) == "Name" and child.text
+                ]
                 if game_exe not in {os.path.basename(target) for target in targets}:
                     continue
-                assignments = next((node for node in root.iter()
-                                    if local(node.tag) == "Assignments"
-                                    and node.get("DeviceModel") == "57"), None)
+
+                assignments = next((
+                    node for node in root.iter()
+                    if local(node.tag) == "Assignments"
+                    and node.get("DeviceModel") == "57"
+                ), None)
                 if assignments is None:
                     continue
+
                 namespace = ""
                 if root.tag.startswith("{"):
                     namespace = root.tag[1:].split("}", 1)[0]
                     ET.register_namespace("", namespace)
-                tag = lambda name: f"{{{namespace}}}{name}" if namespace else name
-                dynamics = next((node for node in assignments
-                                 if local(node.tag) == "AxisDynamics"), None)
-                if dynamics is None:
-                    dynamics = ET.SubElement(assignments, tag("AxisDynamics"))
-                defs = {node.get("Axis", "").upper(): node for node in dynamics
-                        if local(node.tag) == "AxisDef"}
-                changed = False
-                for pedal, axis in axis_for_pedal.items():
-                    if not axis or not axis.replace("_", "").isalnum():
+
+                def qtag(name):
+                    return f"{{{namespace}}}{name}" if namespace else name
+
+                # LGS profiles normally use one AxisDynamics element per axis:
+                # <AxisDynamics Axis="R" Sign="-1" ... />. Do not treat the
+                # first AxisDynamics as a container and append AxisDef inside it.
+                direct_axes = {
+                    node.get("Axis", "").strip().upper(): node
+                    for node in assignments
+                    if local(node.tag) == "AxisDynamics" and node.get("Axis")
+                }
+
+                # Be tolerant of profile variants that really do wrap AxisDef
+                # children in a container. Existing nodes are preferred.
+                wrapped_axes = {}
+                for container in assignments:
+                    if local(container.tag) != "AxisDynamics" or container.get("Axis"):
                         continue
-                    axis_def = defs.get(axis)
-                    if axis_def is None:
-                        axis_def = ET.SubElement(dynamics, tag("AxisDef"), {
-                            "Axis": axis, "Acceleration": "50", "Speed": "100",
-                            "Deadzone": "0", "DeadzoneSign": "0"})
-                        defs[axis] = axis_def
-                    desired = "-1" if (profile or {}).get("invert_" + pedal, False) else "1"
-                    if axis_def.get("Sign") != desired:
-                        axis_def.set("Sign", desired)
+                    for child in container:
+                        if local(child.tag) == "AxisDef" and child.get("Axis"):
+                            wrapped_axes[child.get("Axis", "").strip().upper()] = child
+
+                changed = False
+                for pedal in pedals:
+                    axis = axis_for_pedal[pedal]
+                    if not valid_axis(axis):
+                        continue
+                    node = direct_axes.get(axis) or wrapped_axes.get(axis)
+                    if node is None:
+                        # Match the actual LGS schema: AxisDynamics is a sibling
+                        # entry under Assignments, not a parent for AxisDef.
+                        node = ET.SubElement(assignments, qtag("AxisDynamics"), {
+                            "Axis": axis,
+                            "Acceleration": "50",
+                            "Speed": "100",
+                            "Deadzone": "0",
+                            "DeadzoneSign": "0",
+                            "Sign": desired_sign(pedal),
+                        })
+                        direct_axes[axis] = node
                         changed = True
+                    else:
+                        sign = desired_sign(pedal)
+                        if node.get("Sign") != sign:
+                            node.set("Sign", sign)
+                            changed = True
+
                 if changed:
                     try:
-                        if not os.path.exists(path + ".lwh.bak"):
-                            with open(path, "rb") as source, open(path + ".lwh.bak", "wb") as backup:
+                        backup_path = path + ".lwh.bak"
+                        if not os.path.exists(backup_path):
+                            with open(path, "rb") as source, open(backup_path, "wb") as backup:
                                 backup.write(source.read())
                         temp_path = path + ".lwh.tmp"
                         tree.write(temp_path, encoding="utf-8", xml_declaration=True)
@@ -489,9 +542,9 @@ def set_logitech_profile_pedal_inversions(exe_path, profile):
                         except OSError:
                             pass
                         continue
+
                 found = True
     return found
-
 
 def profile_needs_proxy(profile):
     profile = profile or {}
