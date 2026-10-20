@@ -1,0 +1,235 @@
+{
+  "tool": "g27_windows_raw_input_diagnostics",
+  "started_at": "2026-10-20T09:56:28.902626-03:00",
+  "ended_at": "2026-10-20T09:57:28.905998-03:00",
+  "capture_seconds": 60.003371,
+  "report_records_written": 4108,
+  "devices_at_start": [
+    {
+      "handle": "0x1204a7",
+      "type_code": 0,
+      "type": "mouse",
+      "device_path": "\\\\?\\HID#WmVirtualDevice#2&24679b77&0&0000#{378de44c-56ef-11d1-bc8c-00a0c91405dd}"
+    },
+    {
+      "handle": "0x1904a9",
+      "type_code": 1,
+      "type": "keyboard",
+      "device_path": "\\\\?\\HID#WmVirtualDevice#2&37214c1c&0&0000#{884b96c3-56ef-11d1-bc8c-00a0c91405dd}"
+    },
+    {
+      "handle": "0x10081",
+      "type_code": 2,
+      "type": "hid",
+      "device_path": "\\\\?\\HID#HID_DEVICE_SYSTEM_VHF#8&2dbb9908&0&0000#{4d1e55b2-f16f-11cf-88cb-001111000030}"
+    },
+    {
+      "handle": "0x1006b",
+      "type_code": 2,
+      "type": "hid",
+      "device_path": "\\\\?\\HID#VID_2DC8&PID_6013#8&134cd6bd&0&0000#{4d1e55b2-f16f-11cf-88cb-001111000030}"
+    },
+    {
+      "handle": "0x10069",
+      "type_code": 2,
+      "type": "hid",
+      "device_path": "\\\\?\\HID#VID_0B05&PID_1939&MI_02#8&2765eff3&0&0000#{4d1e55b2-f16f-11cf-88cb-001111000030}"
+    },
+    {
+      "handle": "0x10067",
+      "type_code": 2,
+      "type": "hid",
+      "device_path": "\\\\?\\HID#VID_1CA2&PID_1901&MI_01&Col02#8&20b5f6b6&0&0001#{4d1e55b2-f16f-11cf-88cb-001111000030}"
+    },
+    {
+      "handle": "0x10064",
+      "type_code": 2,
+      "type": "hid",
+      "device_path": "\\\\?\\HID#VID_1CA2&PID_1901&MI_02#8&321470c&0&0000#{4d1e55b2-f16f-11cf-88cb-001111000030}"
+    },
+    {
+      "handle": "0x10062",
+      "type_code": 2,
+      "type": "hid",
+      "device_path": "\\\\?\\HID#VID_046D&PID_C08F&MI_01&Col05#8&161b4fce&0&0004#{4d1e55b2-f16f-11cf-88cb-001111000030}"
+    },
+    {
+      "handle": "0x10060",
+      "type_code": 2,
+      "type": "hid",
+      "device_path": "\\\\?\\HID#VID_046D&PID_C08F&MI_01&Col04#8&161b4fce&0&0003#{4d1e55b2-f16f-11cf-88cb-001111000030}"
+    },
+    {
+      "handle": "0x1005e",
+      "type_code": 2,
+      "type": "hid",
+      "device_path": "\\\\?\\HID#VID_046D&PID_C29B#7&396d53e7&0&0000#{4d1e55b2-f16f-11cf-88cb-001111000030}"
+    },
+    {
+      "handle": "0x1005c",
+      "type_code": 2,
+      "type": "hid",
+      "device_path": "\\\\?\\HID#VID_046D&PID_C08F&MI_01&Col02#8&161b4fce&0&0001#{4d1e55b2-f16f-11cf-88cb-001111000030}"
+    },
+    {
+      "handle": "0x10050",
+      "type_code": 0,
+      "type": "mouse",
+      "device_path": "\\\\?\\HID#VID_1CA2&PID_1901&MI_01&Col04#8&20b5f6b6&0&0003#{378de44c-56ef-11d1-bc8c-00a0c91405dd}"
+    },
+    {
+      "handle": "0x1004e",
+      "type_code": 0,
+      "type": "mouse",
+      "device_path": "\\\\?\\HID#VID_046D&PID_C08F&MI_00#8&39f28d90&0&0000#{378de44c-56ef-11d1-bc8c-00a0c91405dd}"
+    },
+    {
+      "handle": "0x10043",
+      "type_code": 1,
+      "type": "keyboard",
+      "device_path": "\\\\?\\HID#VID_1CA2&PID_1901&MI_00#8&8f26a71&0&0000#{884b96c3-56ef-11d1-bc8c-00a0c91405dd}"
+    },
+    {
+      "handle": "0x10041",
+      "type_code": 1,
+      "type": "keyboard",
+      "device_path": "\\\\?\\HID#VID_046D&PID_C08F&MI_01&Col01#8&161b4fce&0&0000#{884b96c3-56ef-11d1-bc8c-00a0c91405dd}"
+    },
+    {
+      "handle": "0x1003f",
+      "type_code": 1,
+      "type": "keyboard",
+      "device_path": "\\\\?\\HID#VID_1CA2&PID_1901&MI_01&Col01#8&20b5f6b6&0&0000#{884b96c3-56ef-11d1-bc8c-00a0c91405dd}"
+    }
+  ],
+  "devices_observed": [
+    {
+      "handle": "0x1204a7",
+      "type_code": 0,
+      "type": "mouse",
+      "device_path": "\\\\?\\HID#WmVirtualDevice#2&24679b77&0&0000#{378de44c-56ef-11d1-bc8c-00a0c91405dd}"
+    },
+    {
+      "handle": "0x1904a9",
+      "type_code": 1,
+      "type": "keyboard",
+      "device_path": "\\\\?\\HID#WmVirtualDevice#2&37214c1c&0&0000#{884b96c3-56ef-11d1-bc8c-00a0c91405dd}"
+    },
+    {
+      "handle": "0x10081",
+      "type_code": 2,
+      "type": "hid",
+      "device_path": "\\\\?\\HID#HID_DEVICE_SYSTEM_VHF#8&2dbb9908&0&0000#{4d1e55b2-f16f-11cf-88cb-001111000030}"
+    },
+    {
+      "handle": "0x1006b",
+      "type_code": 2,
+      "type": "hid",
+      "device_path": "\\\\?\\HID#VID_2DC8&PID_6013#8&134cd6bd&0&0000#{4d1e55b2-f16f-11cf-88cb-001111000030}"
+    },
+    {
+      "handle": "0x10069",
+      "type_code": 2,
+      "type": "hid",
+      "device_path": "\\\\?\\HID#VID_0B05&PID_1939&MI_02#8&2765eff3&0&0000#{4d1e55b2-f16f-11cf-88cb-001111000030}"
+    },
+    {
+      "handle": "0x10067",
+      "type_code": 2,
+      "type": "hid",
+      "device_path": "\\\\?\\HID#VID_1CA2&PID_1901&MI_01&Col02#8&20b5f6b6&0&0001#{4d1e55b2-f16f-11cf-88cb-001111000030}"
+    },
+    {
+      "handle": "0x10064",
+      "type_code": 2,
+      "type": "hid",
+      "device_path": "\\\\?\\HID#VID_1CA2&PID_1901&MI_02#8&321470c&0&0000#{4d1e55b2-f16f-11cf-88cb-001111000030}"
+    },
+    {
+      "handle": "0x10062",
+      "type_code": 2,
+      "type": "hid",
+      "device_path": "\\\\?\\HID#VID_046D&PID_C08F&MI_01&Col05#8&161b4fce&0&0004#{4d1e55b2-f16f-11cf-88cb-001111000030}"
+    },
+    {
+      "handle": "0x10060",
+      "type_code": 2,
+      "type": "hid",
+      "device_path": "\\\\?\\HID#VID_046D&PID_C08F&MI_01&Col04#8&161b4fce&0&0003#{4d1e55b2-f16f-11cf-88cb-001111000030}"
+    },
+    {
+      "handle": "0x1005e",
+      "type_code": 2,
+      "type": "hid",
+      "device_path": "\\\\?\\HID#VID_046D&PID_C29B#7&396d53e7&0&0000#{4d1e55b2-f16f-11cf-88cb-001111000030}"
+    },
+    {
+      "handle": "0x1005c",
+      "type_code": 2,
+      "type": "hid",
+      "device_path": "\\\\?\\HID#VID_046D&PID_C08F&MI_01&Col02#8&161b4fce&0&0001#{4d1e55b2-f16f-11cf-88cb-001111000030}"
+    },
+    {
+      "handle": "0x10050",
+      "type_code": 0,
+      "type": "mouse",
+      "device_path": "\\\\?\\HID#VID_1CA2&PID_1901&MI_01&Col04#8&20b5f6b6&0&0003#{378de44c-56ef-11d1-bc8c-00a0c91405dd}"
+    },
+    {
+      "handle": "0x1004e",
+      "type_code": 0,
+      "type": "mouse",
+      "device_path": "\\\\?\\HID#VID_046D&PID_C08F&MI_00#8&39f28d90&0&0000#{378de44c-56ef-11d1-bc8c-00a0c91405dd}"
+    },
+    {
+      "handle": "0x10043",
+      "type_code": 1,
+      "type": "keyboard",
+      "device_path": "\\\\?\\HID#VID_1CA2&PID_1901&MI_00#8&8f26a71&0&0000#{884b96c3-56ef-11d1-bc8c-00a0c91405dd}"
+    },
+    {
+      "handle": "0x10041",
+      "type_code": 1,
+      "type": "keyboard",
+      "device_path": "\\\\?\\HID#VID_046D&PID_C08F&MI_01&Col01#8&161b4fce&0&0000#{884b96c3-56ef-11d1-bc8c-00a0c91405dd}"
+    },
+    {
+      "handle": "0x1003f",
+      "type_code": 1,
+      "type": "keyboard",
+      "device_path": "\\\\?\\HID#VID_1CA2&PID_1901&MI_01&Col01#8&20b5f6b6&0&0000#{884b96c3-56ef-11d1-bc8c-00a0c91405dd}"
+    }
+  ],
+  "report_summary_by_device": [
+    {
+      "device_handle": "0x1005e",
+      "device_path": "\\\\?\\HID#VID_046D&PID_C29B#7&396d53e7&0&0000#{4d1e55b2-f16f-11cf-88cb-001111000030}",
+      "report_records": 4108,
+      "report_sizes_bytes": {
+        "13": 4108
+      }
+    }
+  ],
+  "registered_top_level_collections": [
+    {
+      "usage_page": "0x0001",
+      "usage": "0x0004",
+      "name": "Joystick"
+    },
+    {
+      "usage_page": "0x0001",
+      "usage": "0x0005",
+      "name": "Game Pad"
+    }
+  ],
+  "csv_file": "C:\\Users\\leost\\legacy-wheel-hub\\g27-diagnostics\\g27_raw_hid_20261020_095628.csv",
+  "errors": [],
+  "limitations": [
+    "Raw Input delivers HID reports for registered top-level collections; a wheel may expose other collections.",
+    "Report bytes are raw payloads as delivered by Windows, not guaranteed electrical USB bus captures.",
+    "The script does not parse the HID report descriptor or decode logical axes/buttons.",
+    "Raw Input metadata fields require successful RIDI_DEVICEINFO calls; inspect errors and device paths when VID/PID fields are unavailable.",
+    "No reports may mean the wheel uses a different usage collection or driver/API path; it does not prove the device is inactive.",
+    "No output reports, registry writes, driver changes, or force-feedback commands are issued."
+  ]
+}
