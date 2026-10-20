@@ -506,7 +506,9 @@ def set_logitech_profile_pedal_inversions(exe_path, profile):
                     axis = axis_for_pedal[pedal]
                     if not valid_axis(axis):
                         continue
-                    node = direct_axes.get(axis) or wrapped_axes.get(axis)
+                    node = direct_axes.get(axis)
+                    if node is None:
+                        node = wrapped_axes.get(axis)
                     if node is None:
                         # Match the actual LGS schema: AxisDynamics is a sibling
                         # entry under Assignments, not a parent for AxisDef.
