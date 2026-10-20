@@ -180,3 +180,10 @@ Estes resultados foram calculados a partir dos arquivos enviados ao repositório
 A análise do JSON revelou que a chamada de metadados `RIDI_DEVICEINFO` não estava sendo validada corretamente: as funções Win32 não tinham assinaturas `ctypes` explícitas, e o retorno padrão assinado podia fazer a comparação com o sentinela de erro `UINT(-1)` falhar. A ferramenta foi atualizada para declarar os tipos de retorno/argumentos e resumir o número de relatórios e os tamanhos por dispositivo no JSON.
 
 **A correção ainda precisa ser validada no Windows do usuário.** Faça uma nova captura após atualizar o script; confira se os campos VID/PID/Usage deixam de aparecer como zero e se o JSON traz `report_summary_by_device`. O resumo permitirá distinguir os relatórios do caminho do G27 dos relatórios de outros dispositivos que também estejam conectados.
+
+
+## Capturas Raw Input posteriores à correção (2026-10-20)
+
+Foram analisadas duas novas capturas de aproximadamente 60 segundos. O script agrupou 4.058 e 4.108 relatórios, respectivamente, no caminho HID que contém `VID_046D&PID_C29B`; todos os relatórios tinham 13 bytes e não foram reportados erros. Vários bytes variam, mas ainda não podem ser associados a eixos ou botões sem interpretar o descritor HID.
+
+O relatório detalhado e as limitações estão em [Análise das capturas Raw Input do G27 — 2026-10-20](G27_RAW_INPUT_CAPTURE_20261020.md). Próxima etapa: recuperar o descritor HID e decodificar os campos antes de tentar identificar os bytes de cada eixo/pedal.
