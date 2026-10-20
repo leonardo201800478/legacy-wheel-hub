@@ -237,7 +237,7 @@ public:
     {
         const HRESULT hr = real_->GetDeviceState(size, state);
         if (SUCCEEDED(hr) && state && size >= sizeof(LONG))
-            LwhApplyPedalInversion(state, size);
+            LwhApplyPedalInversion(state, size, axisOffsets_);
         return hr;
     }
     LWH_FWD(GetDeviceData, (DWORD a, LPDIDEVICEOBJECTDATA b, LPDWORD c, DWORD d), (a, b, c, d))
@@ -245,6 +245,21 @@ public:
     HRESULT STDMETHODCALLTYPE SetDataFormat(LPCDIDATAFORMAT format) override
     {
         const HRESULT hr = real_->SetDataFormat(format);
+        if (SUCCEEDED(hr)) {
+            for (LONG& offset : axisOffsets_) offset = -1;
+            if (format && format->dwSize >= sizeof(DIDATAFORMAT) &&
+                format->rgodf && format->dwObjSize >= sizeof(DIOBJECTDATAFORMAT)) {
+                const BYTE* objects = reinterpret_cast<const BYTE*>(format->rgodf);
+                const DWORD count = format->dwNumObjs < 256 ? format->dwNumObjs : 256;
+                for (DWORD i = 0; i < count; ++i) {
+                    const auto* obj = reinterpret_cast<const DIOBJECTDATAFORMAT*>(
+                        objects + static_cast<size_t>(i) * format->dwObjSize);
+                    if (!obj->pguid) continue;
+                    const int axis = LwhAxisIndexFromGuid(*obj->pguid, obj->dwType);
+                    if (axis >= 0 && axis < 8) axisOffsets_[axis] = static_cast<LONG>(obj->dwOfs);
+                }
+            }
+        }
 
         // Opt-in diagnostic: record the exact DirectInput object layout
         // requested by the game, but never record live axis values.
@@ -350,6 +365,7 @@ public:
 
 private:
     typename T::IDev* real_;
+    LONG axisOffsets_[8] = {-1, -1, -1, -1, -1, -1, -1, -1};
     volatile LONG ref_ = 1;
 };
 
