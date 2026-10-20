@@ -560,6 +560,44 @@ def profile_has_driver_pedal_settings(profile):
         for pedal in ("throttle", "brake", "clutch")))
 
 
+def profile_to_xml(profile_name, profile):
+    """Serialize a Legacy Wheel Hub profile to a portable, diagnostic XML file.
+
+    This is the Hub's own export format, not a Logitech Gaming Software (LGS)
+    profile. Values are typed so the file can be compared and re-imported by a
+    future Hub version without guessing whether a value was a string or bool.
+    """
+    root = ET.Element("LegacyWheelHubProfile", {
+        "formatVersion": "1",
+        "name": str(profile_name),
+    })
+    exe = ET.SubElement(root, "Executable")
+    exe.text = str((profile or {}).get("exe_path", "") or "")
+    settings = ET.SubElement(root, "Settings")
+    for key in sorted((profile or {}).keys(), key=lambda value: str(value)):
+        value = (profile or {})[key]
+        item = ET.SubElement(settings, "Setting", {"name": str(key)})
+        if isinstance(value, bool):
+            item.set("type", "bool")
+            item.text = "true" if value else "false"
+        elif value is None:
+            item.set("type", "null")
+        elif isinstance(value, int):
+            item.set("type", "int")
+            item.text = str(value)
+        elif isinstance(value, float):
+            item.set("type", "float")
+            item.text = repr(value)
+        elif isinstance(value, (dict, list, tuple)):
+            item.set("type", "json")
+            item.text = json.dumps(value, ensure_ascii=False, sort_keys=True)
+        else:
+            item.set("type", "string")
+            item.text = str(value)
+    ET.indent(root, space="  ")
+    return ET.tostring(root, encoding="utf-8", xml_declaration=True)
+
+
 _ICON_PROVIDER = None
 _ICON_CACHE = {}
 
@@ -2937,14 +2975,44 @@ class PresetsPanel(QWidget):
         for it in self.items:
             it.set_selected(it.selected)
 
-    def _context_menu(self, name, gpos):
-        if name == "Global":
+    def _export_profile(self, name):
+        profile = global_settings.get("profiles", {}).get(name)
+        if profile is None:
             return
+        safe_name = "".join(c if c.isalnum() or c in "-_ " else "_" for c in name).strip()
+        default_path = os.path.join(os.path.expanduser("~"), (safe_name or "profile") + ".xml")
+        path, _ = QFileDialog.getSaveFileName(
+            self.window(), "Export profile to XML", default_path, "XML files (*.xml)")
+        if not path:
+            return
+        if not path.lower().endswith(".xml"):
+            path += ".xml"
+        try:
+            payload = profile_to_xml(name, profile)
+            with open(path, "wb") as output:
+                output.write(payload)
+            _defer_infobar(
+                "success", "Profile exported",
+                os.path.basename(path), duration=3000,
+                position=InfoBarPosition.TOP, parent=self.window())
+        except (OSError, TypeError, ValueError) as exc:
+            _defer_infobar(
+                "warning", "Export failed", str(exc), duration=5000,
+                position=InfoBarPosition.TOP, parent=self.window())
+
+    def _context_menu(self, name, gpos):
         menu = QMenu(self)
+        act_export = menu.addAction("Export profile to XML...")
+        menu.addSeparator()
         act_ren = menu.addAction(tr("prof.ren_title"))
         act_del = menu.addAction(tr("dlg.delete"))
+        if name == "Global":
+            act_ren.setEnabled(False)
+            act_del.setEnabled(False)
         chosen = menu.exec(gpos)
-        if chosen == act_ren:
+        if chosen == act_export:
+            self._export_profile(name)
+        elif chosen == act_ren:
             new = _name_dialog(tr("prof.ren_title"), name, self.window())
             if new and new != name and new not in global_settings["profiles"]:
                 profs = global_settings["profiles"]
