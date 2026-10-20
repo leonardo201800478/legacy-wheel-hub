@@ -93,6 +93,17 @@ class RID_DEVICE_INFO(ctypes.Structure):
     _fields_ = [("cbSize", DWORD), ("dwType", DWORD), ("data", RID_DEVICE_INFO_UNION)]
 
 
+# Declare Win32 signatures explicitly: the default ctypes return type is a
+# signed C int, which can mis-handle UINT(-1) error sentinels on 64-bit Windows.
+user32.GetRawInputDeviceInfoW.argtypes = [HANDLE, UINT, ctypes.c_void_p, ctypes.POINTER(UINT)]
+user32.GetRawInputDeviceInfoW.restype = UINT
+user32.GetRawInputDeviceList.argtypes = [ctypes.POINTER(RAWINPUTDEVICELIST), ctypes.POINTER(UINT), UINT]
+user32.GetRawInputDeviceList.restype = UINT
+user32.GetRawInputData.argtypes = [HANDLE, UINT, ctypes.c_void_p, ctypes.POINTER(UINT), UINT]
+user32.GetRawInputData.restype = UINT
+user32.RegisterRawInputDevices.argtypes = [ctypes.POINTER(RAWINPUTDEVICE), UINT, UINT]
+user32.RegisterRawInputDevices.restype = wintypes.BOOL
+
 class POINT(ctypes.Structure):
     _fields_ = [("x", wintypes.LONG), ("y", wintypes.LONG)]
 
@@ -201,6 +212,7 @@ def main() -> int:
     start_clock = time.monotonic()
     count = 0
     errors: list[str] = []
+    per_device: dict[str, dict] = {}
     active_devices: dict[str, dict] = {d["handle"]: d for d in devices}
 
     with csv_path.open("w", newline="", encoding="utf-8-sig") as handle:
@@ -253,6 +265,17 @@ def main() -> int:
                                             key, path, report_count, report_size, index, report.hex(" "),
                                         ])
                                         count += 1
+                                        summary = per_device.setdefault(key, {
+                                            "device_handle": key,
+                                            "device_path": path,
+                                            "report_records": 0,
+                                            "report_sizes_bytes": {},
+                                        })
+                                        summary["report_records"] += 1
+                                        size_key = str(report_size)
+                                        summary["report_sizes_bytes"][size_key] = (
+                                            summary["report_sizes_bytes"].get(size_key, 0) + 1
+                                        )
                                     if count % 100 == 0:
                                         handle.flush()
                 except Exception as exc:
@@ -331,6 +354,7 @@ def main() -> int:
         "report_records_written": count,
         "devices_at_start": devices,
         "devices_observed": list(active_devices.values()),
+        "report_summary_by_device": list(per_device.values()),
         "registered_top_level_collections": [
             {"usage_page": "0x0001", "usage": "0x0004", "name": "Joystick"},
             {"usage_page": "0x0001", "usage": "0x0005", "name": "Game Pad"},
@@ -341,6 +365,7 @@ def main() -> int:
             "Raw Input delivers HID reports for registered top-level collections; a wheel may expose other collections.",
             "Report bytes are raw payloads as delivered by Windows, not guaranteed electrical USB bus captures.",
             "The script does not parse the HID report descriptor or decode logical axes/buttons.",
+            "Raw Input metadata fields require successful RIDI_DEVICEINFO calls; inspect errors and device paths when VID/PID fields are unavailable.",
             "No reports may mean the wheel uses a different usage collection or driver/API path; it does not prove the device is inactive.",
             "No output reports, registry writes, driver changes, or force-feedback commands are issued.",
         ],
