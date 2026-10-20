@@ -463,7 +463,7 @@ def set_logitech_profile_pedal_inversions(exe_path, profile):
                     for child in target
                     if local(child.tag) == "Name" and child.text
                 ]
-                if game_exe not in {os.path.basename(target.replace("\\\\", "/")) for target in targets}:
+                if game_exe not in {os.path.basename(target.replace("\\", "/")) for target in targets}:
                     continue
 
                 assignments = next((
