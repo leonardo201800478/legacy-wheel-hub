@@ -421,13 +421,12 @@ def set_logitech_profile_pedal_inversions(exe_path, profile):
             os.path.join(root, "Logitech", "Gaming Software", "profiles"),
         ))
 
-    pedals = ("throttle", "brake", "clutch")
-    axis_for_pedal = {
-        pedal: str((profile or {}).get("lgs_axis_" + pedal, "")).strip().upper()
-        for pedal in pedals
-    }
-    if not any(axis_for_pedal.values()):
-        return False
+    # Confirmed against the user's Logitech G27 LGS profile:
+    # accelerator = Z, brake = R. Keep this mapping fixed so users do not
+    # need to guess an AxisDef manually. Clutch is intentionally not mapped
+    # until its LGS axis is verified.
+    axis_for_pedal = {"throttle": "Z", "brake": "R"}
+    pedals = tuple(axis_for_pedal)
 
     def local(tag):
         """Return an XML local name, ignoring an optional namespace."""
@@ -900,7 +899,7 @@ DEFAULT_RAMP = 7
 
 LANG = {
     "en": {
-        "pedal.invert": "Invert pedal axis", "pedal.axis_map": "Choose Logitech axis…", "pedal.axis_prompt": "Which LGS AxisDef axis represents this pedal? The XML does not identify pedals by itself.", "pedal.axis_none": "Not set", "pedal.axis_duplicate": "That Logitech axis is already assigned to another pedal.", "pedal.lgs_profile_required": "Select the game's executable, assign each pedal to its LGS AxisDef from the pedal menu, and make sure its profile is imported into Logitech Gaming Software.", "pedal.lgs_updated": "Logitech profile updated. Restart Logitech Gaming Software and the game to apply the change.",
+        "pedal.invert": "Invert pedal axis", "pedal.lgs_profile_required": "Select the game's executable, assign each pedal to its LGS AxisDef from the pedal menu, and make sure its profile is imported into Logitech Gaming Software.", "pedal.lgs_updated": "Logitech profile updated. Restart Logitech Gaming Software and the game to apply the change.",
         "nav.home": "Home", "nav.wheel": "Wheel Settings", "nav.ffb": "FFB Test",
         "nav.input": "Input Monitor", "nav.apply": "Apply Settings",
         "nav.theme": "Toggle Theme", "nav.about": "About",
@@ -1017,7 +1016,7 @@ LANG = {
         "info.active": "Active", "info.standby": "Standby",
     },
     "tr": {
-        "pedal.invert": "Pedal eksenini ters çevir", "pedal.axis_map": "Logitech eksenini seç…", "pedal.axis_prompt": "Bu pedalı LGS AxisDef içinde hangi eksen temsil ediyor? XML tek başına pedalları tanımlamaz.", "pedal.axis_none": "Ayarlanmadı", "pedal.axis_duplicate": "Bu Logitech ekseni başka bir pedala zaten atanmış.", "pedal.lgs_profile_required": "Oyunun çalıştırılabilir dosyasını seçin, her pedala pedal menüsünden bir LGS AxisDef atayın ve profilin Logitech Gaming Software'e aktarıldığını doğrulayın.", "pedal.lgs_updated": "Logitech profili güncellendi. Değişikliğin uygulanması için Logitech Gaming Software'i ve oyunu yeniden başlatın.",
+        "pedal.invert": "Pedal eksenini ters çevir", "pedal.lgs_profile_required": "Oyunun çalıştırılabilir dosyasını seçin, her pedala pedal menüsünden bir LGS AxisDef atayın ve profilin Logitech Gaming Software'e aktarıldığını doğrulayın.", "pedal.lgs_updated": "Logitech profili güncellendi. Değişikliğin uygulanması için Logitech Gaming Software'i ve oyunu yeniden başlatın.",
         "nav.home": "Ana Sayfa", "nav.wheel": "Direksiyon Ayarları", "nav.ffb": "FFB Testi",
         "nav.input": "Giriş İzleyici", "nav.apply": "Ayarları Uygula",
         "nav.theme": "Tema Değiştir", "nav.about": "Hakkında",
@@ -1134,7 +1133,7 @@ LANG = {
         "info.active": "Aktif", "info.standby": "Beklemede",
     },
     "de": {
-        "pedal.invert": "Pedalachse umkehren", "pedal.axis_map": "Logitech-Achse wählen…", "pedal.axis_prompt": "Welche Achse in LGS AxisDef steht für dieses Pedal? Die XML-Datei ordnet Pedale nicht selbst zu.", "pedal.axis_none": "Nicht festgelegt", "pedal.axis_duplicate": "Diese Logitech-Achse ist bereits einem anderen Pedal zugeordnet.", "pedal.lgs_profile_required": "Wähle die Spiel-EXE, weise jedem Pedal über sein Menü eine LGS-AxisDef zu und stelle sicher, dass das Profil in Logitech Gaming Software importiert ist.", "pedal.lgs_updated": "Logitech-Profil aktualisiert. Starte Logitech Gaming Software und das Spiel neu, um die Änderung anzuwenden.",
+        "pedal.invert": "Pedalachse umkehren", "pedal.lgs_profile_required": "Wähle die Spiel-EXE, weise jedem Pedal über sein Menü eine LGS-AxisDef zu und stelle sicher, dass das Profil in Logitech Gaming Software importiert ist.", "pedal.lgs_updated": "Logitech-Profil aktualisiert. Starte Logitech Gaming Software und das Spiel neu, um die Änderung anzuwenden.",
         "nav.home": "Startseite", "nav.wheel": "Lenkrad-Einstellungen", "nav.ffb": "FFB-Test",
         "nav.input": "Eingangsmonitor", "nav.apply": "Einstellungen anwenden",
         "nav.theme": "Design wechseln", "nav.about": "Über",
@@ -1251,7 +1250,7 @@ LANG = {
         "info.active": "Aktiv", "info.standby": "Standby",
     },
     "es": {
-        "pedal.invert":"Invertir eje del pedal", "pedal.axis_map":"Elegir eje Logitech…", "pedal.axis_prompt":"¿Qué eje de LGS AxisDef representa este pedal? El XML no asigna los pedales por sí solo.", "pedal.axis_none":"Sin asignar", "pedal.axis_duplicate":"Ese eje Logitech ya está asignado a otro pedal.", "pedal.lgs_profile_required":"Selecciona el ejecutable del juego, asigna un LGS AxisDef a cada pedal desde su menú y asegúrate de que el perfil esté importado en Logitech Gaming Software.", "pedal.lgs_updated":"Perfil de Logitech actualizado. Reinicia Logitech Gaming Software y el juego para aplicar el cambio.",
+        "pedal.invert":"Invertir eje del pedal", "pedal.lgs_profile_required":"Selecciona el ejecutable del juego, asigna un LGS AxisDef a cada pedal desde su menú y asegúrate de que el perfil esté importado en Logitech Gaming Software.", "pedal.lgs_updated":"Perfil de Logitech actualizado. Reinicia Logitech Gaming Software y el juego para aplicar el cambio.",
         "nav.home":"Inicio", "nav.wheel":"Ajustes del volante", "nav.ffb":"Prueba de FFB", "nav.input":"Monitor de entradas", "nav.apply":"Aplicar ajustes", "nav.theme":"Cambiar tema", "nav.about":"Acerca de",
         "conn.connecting":"Conectando…", "conn.not_connected":"Desconectado", "conn.connected":"Conectado", "conn.test":"Modo de prueba",
         "home.title":"Telemetría en tiempo real", "home.steering":"ÁNGULO DEL VOLANTE", "home.clutch":"EMBRAGUE", "home.brake":"FRENO", "home.throttle":"ACELERADOR", "home.center":"Centrar volante", "home.na":"N/D",
@@ -1269,7 +1268,7 @@ LANG = {
         "set.title":"AJUSTES", "set.appearance":"APARIENCIA", "set.general":"GENERAL", "set.testing":"PRUEBAS", "set.theme":"Tema", "set.language":"Idioma", "set.tray":"Minimizar a la bandeja del sistema", "set.tray_h":"Si está activado, el botón de minimizar oculta la aplicación en la bandeja del sistema (iconos ocultos).", "set.devmode":"Modo de detección del dispositivo", "set.devmode_h":"Fuerza una distribución del volante sin hardware conectado. «Auto» usa la detección real.", "set.ui_scale":"Escala de la interfaz", "set.ui_scale_h":"Amplía toda la interfaz en pantallas de alta resolución (1440p/4K). Se aplica al reiniciar la aplicación.", "set.restart_hint":"Reinicia la aplicación para aplicar la nueva escala.", "info.opmode_active":"Modo avanzado nativo (desbloqueado)", "info.opmode_idle":"Inactivo / Desconectado", "info.active":"Activo", "info.standby":"En espera"
     },
     "pt-BR": {
-        "pedal.invert":"Inverter eixo do pedal", "pedal.axis_map":"Escolher eixo Logitech…", "pedal.axis_prompt":"Qual eixo em AxisDef do LGS representa este pedal? O XML não identifica os pedais sozinho.", "pedal.axis_none":"Não definido", "pedal.axis_duplicate":"Esse eixo Logitech já está associado a outro pedal.", "pedal.lgs_profile_required":"Selecione o executável do jogo, associe um LGS AxisDef a cada pedal pelo menu do pedal e confirme que o perfil foi importado no Logitech Gaming Software.", "pedal.lgs_updated":"Perfil Logitech atualizado. Reinicie o Logitech Gaming Software e o jogo para aplicar a alteração.",
+        "pedal.invert":"Inverter eixo do pedal", "pedal.lgs_profile_required":"Selecione o executável do jogo, associe um LGS AxisDef a cada pedal pelo menu do pedal e confirme que o perfil foi importado no Logitech Gaming Software.", "pedal.lgs_updated":"Perfil Logitech atualizado. Reinicie o Logitech Gaming Software e o jogo para aplicar a alteração.",
         "nav.home":"Início", "nav.wheel":"Configurações do volante", "nav.ffb":"Teste de FFB", "nav.input":"Monitor de entradas", "nav.apply":"Aplicar configurações", "nav.theme":"Alternar tema", "nav.about":"Sobre",
         "conn.connecting":"Conectando…", "conn.not_connected":"Desconectado", "conn.connected":"Conectado", "conn.test":"Modo de teste",
         "home.title":"Telemetria ao vivo", "home.steering":"ÂNGULO DO VOLANTE", "home.clutch":"EMBREAGEM", "home.brake":"FREIO", "home.throttle":"ACELERADOR", "home.center":"Centralizar volante", "home.na":"N/D",
@@ -1314,9 +1313,7 @@ PROFILE_DEFAULTS = {"angle": 900, "di_gain": 101, "di_spring": 0, "di_damper": 0
                     "di_center": 0, "di_ramp": DEFAULT_RAMP, "di_persist": False,
                     "exe_path": "", "logo_exe": "", "lut_file": "", "lut_enabled": False,
                     "invert_throttle": False, "invert_brake": False, "invert_clutch": False,
-                    "driver_pedal_inversion_configured": False,
-                    "lgs_axis_throttle": "", "lgs_axis_brake": "",
-                    "lgs_axis_clutch": ""}
+                    "driver_pedal_inversion_configured": False}
 
 
 def _active_ramp():
@@ -2013,11 +2010,11 @@ class WheelWidget(QWidget):
 
 
 class PedalBar(QWidget):
-    def __init__(self, label, color, pedal, on_invert, on_axis_map):
+    def __init__(self, label, color, pedal, on_invert):
         super().__init__()
         self.value = 0.0; self.disp = 0.0
         self.label = label; self.color = QColor(color)
-        self.pedal = pedal; self.on_invert = on_invert; self.on_axis_map = on_axis_map
+        self.pedal = pedal; self.on_invert = on_invert
         self.inverted = False
         self.enabled_axis = True
         self.setMinimumSize(58, 150)
@@ -2030,9 +2027,6 @@ class PedalBar(QWidget):
             action = menu.addAction(tr("pedal.invert"))
             action.setCheckable(True); action.setChecked(self.inverted)
             action.triggered.connect(lambda checked: self.on_invert(self.pedal, checked))
-            menu.addSeparator()
-            axis_action = menu.addAction(tr("pedal.axis_map"))
-            axis_action.triggered.connect(lambda: self.on_axis_map(self.pedal))
             menu.exec(e.globalPosition().toPoint())
             e.accept()
             return
@@ -3001,9 +2995,9 @@ class TelemetryPanel(QWidget):
         # Leave enough width for translated pedal names such as "ACELERADOR"
         # and "EMBREAGEM"; the bars themselves stay centered in each column.
         prow = QHBoxLayout(); prow.setSpacing(10); prow.setAlignment(Qt.AlignmentFlag.AlignHCenter)
-        self.clutch = PedalBar(tr("home.clutch"), "#60a5fa", "clutch", self._on_pedal_invert, self._on_pedal_axis_map)
-        self.brake = PedalBar(tr("home.brake"), "#ff6b6b", "brake", self._on_pedal_invert, self._on_pedal_axis_map)
-        self.throttle = PedalBar(tr("home.throttle"), "#5dc98a", "throttle", self._on_pedal_invert, self._on_pedal_axis_map)
+        self.clutch = PedalBar(tr("home.clutch"), "#60a5fa", "clutch", self._on_pedal_invert)
+        self.brake = PedalBar(tr("home.brake"), "#ff6b6b", "brake", self._on_pedal_invert)
+        self.throttle = PedalBar(tr("home.throttle"), "#5dc98a", "throttle", self._on_pedal_invert)
         for wdg in (self.clutch, self.brake, self.throttle):
             wdg.setFixedSize(86, 150)
             prow.addWidget(wdg)
@@ -3039,38 +3033,6 @@ class TelemetryPanel(QWidget):
             if exe and not still_needed:
                 uninstall_proxy_for(exe)
         self.refresh()
-
-    def _on_pedal_axis_map(self, pedal):
-        if main_window is None:
-            return
-        from PySide6.QtWidgets import QInputDialog
-        profile = global_settings["profiles"].setdefault(
-            global_settings["selected_profile"], dict(PROFILE_DEFAULTS))
-        key = "lgs_axis_" + pedal
-        current = str(profile.get(key, "")).upper()
-        choice, accepted = QInputDialog.getText(
-            main_window, tr("pedal.axis_map"), tr("pedal.axis_prompt"),
-            text=current)
-        if not accepted:
-            return
-        axis = choice.strip().upper()
-        if axis and any(
-                other != pedal and str(profile.get("lgs_axis_" + other, "")).upper() == axis
-                for other in ("throttle", "brake", "clutch")):
-            _defer_infobar("warning", tr("pedal.axis_map"), tr("pedal.axis_duplicate"),
-                           duration=3500, position=InfoBarPosition.TOP, parent=main_window)
-            return
-        profile[key] = axis
-        save_settings()
-        if profile_has_driver_pedal_settings(profile):
-            exe = profile.get("exe_path", "")
-            if not set_logitech_profile_pedal_inversions(exe, profile):
-                _defer_infobar("warning", tr("pedal.axis_map"),
-                               tr("pedal.lgs_profile_required"), duration=5000,
-                               position=InfoBarPosition.TOP, parent=main_window)
-            else:
-                _defer_infobar("success", tr("pedal.axis_map"), tr("pedal.lgs_updated"),
-                               duration=5000, position=InfoBarPosition.TOP, parent=main_window)
 
     def retranslate(self):
         self.hdr._lbl.setText(tr("ui.telemetry"))
