@@ -34,7 +34,16 @@
       "driver_pedal_inversion_configured": true,
       "lgs_axis_throttle": "",
       "lgs_axis_brake": "",
-      "lgs_axis_clutch": ""
+      "lgs_axis_clutch": "",
+      "pedal_axis_throttle_offset": -1,
+      "pedal_axis_brake_offset": -1,
+      "pedal_axis_clutch_offset": -1,
+      "pedal_axis_throttle_min": 0,
+      "pedal_axis_brake_min": 0,
+      "pedal_axis_clutch_min": 0,
+      "pedal_axis_throttle_max": 65535,
+      "pedal_axis_brake_max": 65535,
+      "pedal_axis_clutch_max": 65535
     },
     "MAME": {
       "angle": 270,
@@ -54,7 +63,16 @@
       "driver_pedal_inversion_configured": true,
       "lgs_axis_throttle": "",
       "lgs_axis_brake": "",
-      "lgs_axis_clutch": ""
+      "lgs_axis_clutch": "",
+      "pedal_axis_throttle_offset": -1,
+      "pedal_axis_brake_offset": -1,
+      "pedal_axis_clutch_offset": -1,
+      "pedal_axis_throttle_min": 0,
+      "pedal_axis_brake_min": 0,
+      "pedal_axis_clutch_min": 0,
+      "pedal_axis_throttle_max": 65535,
+      "pedal_axis_brake_max": 65535,
+      "pedal_axis_clutch_max": 65535
     }
   },
   "selected_profile": "Global",
