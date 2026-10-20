@@ -397,157 +397,6 @@ def set_active_lut(path, exe_path=None):
         pass
 
 
-def set_logitech_profile_pedal_inversions(exe_path, profile):
-    """Apply pedal inversion to the matching Logitech Gaming Software profile.
-
-    LGS stores per-axis direction as a Sign attribute on AxisDynamics elements
-    directly under the device Assignments node (for example Axis="R",
-    Sign="-1"). Some profile variants may wrap AxisDef elements inside an
-    AxisDynamics container, so both layouts are handled without creating an
-    invalid nested AxisDef in the common LGS format.
-
-    This edits the installed LGS XML profile. It does not transform input
-    values in the Hub and does not prove that every LGS/driver version reloads
-    the edited profile immediately.
-    """
-    if not exe_path:
-        return False
-
-    game_exe = os.path.basename(resolve_game_exe(exe_path) or exe_path).casefold()
-    appdata_roots = [os.environ.get("LOCALAPPDATA"), os.environ.get("APPDATA")]
-    profile_dirs = []
-    for root in filter(None, appdata_roots):
-        profile_dirs.extend((
-            os.path.join(root, "Logitech", "Logitech Gaming Software", "profiles"),
-            os.path.join(root, "Logitech", "Gaming Software", "profiles"),
-        ))
-
-    # Confirmed against the user's Logitech G27 LGS profile:
-    # accelerator = Z, brake = R. Keep this mapping fixed so users do not
-    # need to guess an AxisDef manually. Clutch is intentionally not mapped
-    # until its LGS axis is verified.
-    axis_for_pedal = {"throttle": "Z", "brake": "R"}
-    pedals = tuple(axis_for_pedal)
-
-    def local(tag):
-        """Return an XML local name, ignoring an optional namespace."""
-        return tag.rsplit("}", 1)[-1]
-
-    def valid_axis(axis):
-        """Accept simple axis identifiers while rejecting malformed XML data."""
-        return bool(axis) and len(axis) <= 8 and axis.replace("_", "").isalnum()
-
-    def desired_sign(pedal):
-        """Map the UI inversion checkbox to the LGS axis Sign convention."""
-        return "-1" if bool((profile or {}).get("invert_" + pedal, False)) else "1"
-
-    found = False
-    for profile_dir in dict.fromkeys(profile_dirs):
-        if not os.path.isdir(profile_dir):
-            continue
-        for folder, _, files in os.walk(profile_dir):
-            for filename in files:
-                if not filename.lower().endswith(".xml"):
-                    continue
-                path = os.path.join(folder, filename)
-                try:
-                    tree = ET.parse(path)
-                    root = tree.getroot()
-                except (ET.ParseError, OSError):
-                    continue
-
-                targets = [
-                    child.text.strip().casefold()
-                    for target in root.iter()
-                    if local(target.tag) == "Target"
-                    for child in target
-                    if local(child.tag) == "Name" and child.text
-                ]
-                if game_exe not in {os.path.basename(target.replace("\\", "/")) for target in targets}:
-                    continue
-
-                assignments = next((
-                    node for node in root.iter()
-                    if local(node.tag) == "Assignments"
-                    and node.get("DeviceModel") == "57"
-                ), None)
-                if assignments is None:
-                    continue
-
-                namespace = ""
-                if root.tag.startswith("{"):
-                    namespace = root.tag[1:].split("}", 1)[0]
-                    ET.register_namespace("", namespace)
-
-                def qtag(name):
-                    return f"{{{namespace}}}{name}" if namespace else name
-
-                # LGS profiles normally use one AxisDynamics element per axis:
-                # <AxisDynamics Axis="R" Sign="-1" ... />. Do not treat the
-                # first AxisDynamics as a container and append AxisDef inside it.
-                direct_axes = {
-                    node.get("Axis", "").strip().upper(): node
-                    for node in assignments
-                    if local(node.tag) == "AxisDynamics" and node.get("Axis")
-                }
-
-                # Be tolerant of profile variants that really do wrap AxisDef
-                # children in a container. Existing nodes are preferred.
-                wrapped_axes = {}
-                for container in assignments:
-                    if local(container.tag) != "AxisDynamics" or container.get("Axis"):
-                        continue
-                    for child in container:
-                        if local(child.tag) == "AxisDef" and child.get("Axis"):
-                            wrapped_axes[child.get("Axis", "").strip().upper()] = child
-
-                changed = False
-                for pedal in pedals:
-                    axis = axis_for_pedal[pedal]
-                    if not valid_axis(axis):
-                        continue
-                    node = direct_axes.get(axis)
-                    if node is None:
-                        node = wrapped_axes.get(axis)
-                    if node is None:
-                        # Match the actual LGS schema: AxisDynamics is a sibling
-                        # entry under Assignments, not a parent for AxisDef.
-                        node = ET.SubElement(assignments, qtag("AxisDynamics"), {
-                            "Axis": axis,
-                            "Acceleration": "50",
-                            "Speed": "100",
-                            "Deadzone": "0",
-                            "DeadzoneSign": "0",
-                            "Sign": desired_sign(pedal),
-                        })
-                        direct_axes[axis] = node
-                        changed = True
-                    else:
-                        sign = desired_sign(pedal)
-                        if node.get("Sign") != sign:
-                            node.set("Sign", sign)
-                            changed = True
-
-                if changed:
-                    try:
-                        backup_path = path + ".lwh.bak"
-                        if not os.path.exists(backup_path):
-                            with open(path, "rb") as source, open(backup_path, "wb") as backup:
-                                backup.write(source.read())
-                        temp_path = path + ".lwh.tmp"
-                        tree.write(temp_path, encoding="utf-8", xml_declaration=True)
-                        os.replace(temp_path, path)
-                    except OSError:
-                        try:
-                            if os.path.exists(path + ".lwh.tmp"):
-                                os.remove(path + ".lwh.tmp")
-                        except OSError:
-                            pass
-                        continue
-
-                found = True
-    return found
-
 def profile_needs_proxy(profile):
     profile = profile or {}
     return bool(profile.get("lut_enabled"))
@@ -1307,7 +1156,7 @@ LANG = {
         "set.title":"AJUSTES", "set.appearance":"APARIENCIA", "set.general":"GENERAL", "set.testing":"PRUEBAS", "set.theme":"Tema", "set.language":"Idioma", "set.tray":"Minimizar a la bandeja del sistema", "set.tray_h":"Si está activado, el botón de minimizar oculta la aplicación en la bandeja del sistema (iconos ocultos).", "set.devmode":"Modo de detección del dispositivo", "set.devmode_h":"Fuerza una distribución del volante sin hardware conectado. «Auto» usa la detección real.", "set.ui_scale":"Escala de la interfaz", "set.ui_scale_h":"Amplía toda la interfaz en pantallas de alta resolución (1440p/4K). Se aplica al reiniciar la aplicación.", "set.restart_hint":"Reinicia la aplicación para aplicar la nueva escala.", "info.opmode_active":"Modo avanzado nativo (desbloqueado)", "info.opmode_idle":"Inactivo / Desconectado", "info.active":"Activo", "info.standby":"En espera"
     },
     "pt-BR": {
-        "pedal.invert":"Inverter eixo do pedal", "pedal.lgs_profile_required":"Selecione o executável do jogo, associe um LGS AxisDef a cada pedal pelo menu do pedal e confirme que o perfil foi importado no Logitech Gaming Software.", "pedal.lgs_updated":"Perfil Logitech atualizado. Reinicie o Logitech Gaming Software e o jogo para aplicar a alteração.",
+        "pedal.invert":"Inverter eixo do pedal", "pedal.lgs_profile_required":"", "pedal.lgs_updated":"", "pedal.standalone_pending":"Configuração salva no Hub. A inversão independente para jogos ainda precisa ser implementada; o Hub não altera o LGS.",
         "nav.home":"Início", "nav.wheel":"Configurações do volante", "nav.ffb":"Teste de FFB", "nav.input":"Monitor de entradas", "nav.apply":"Aplicar configurações", "nav.theme":"Alternar tema", "nav.about":"Sobre",
         "conn.connecting":"Conectando…", "conn.not_connected":"Desconectado", "conn.connected":"Conectado", "conn.test":"Modo de teste",
         "home.title":"Telemetria ao vivo", "home.steering":"ÂNGULO DO VOLANTE", "home.clutch":"EMBREAGEM", "home.brake":"FREIO", "home.throttle":"ACELERADOR", "home.center":"Centralizar volante", "home.na":"N/D",
@@ -2872,8 +2721,6 @@ class PresetsPanel(QWidget):
         if not exe:
             return
         prof = global_settings["profiles"].get(self._selected(), {})
-        if profile_has_driver_pedal_settings(prof):
-            set_logitech_profile_pedal_inversions(exe, prof)
         if not profile_needs_proxy(prof):
             still_needed = any(
                 other is not prof and profile_needs_proxy(other)
@@ -3085,13 +2932,8 @@ class TelemetryPanel(QWidget):
         profile["driver_pedal_inversion_configured"] = True
         save_settings()
         exe = profile.get("exe_path", "")
-        updated = set_logitech_profile_pedal_inversions(exe, profile)
-        if not updated:
-            _defer_infobar("warning", tr("pedal.invert"), tr("pedal.lgs_profile_required"),
-                           duration=5000, position=InfoBarPosition.TOP, parent=main_window)
-        else:
-            _defer_infobar("success", tr("pedal.invert"), tr("pedal.lgs_updated"),
-                           duration=5000, position=InfoBarPosition.TOP, parent=main_window)
+        _defer_infobar("warning", tr("pedal.invert"), tr("pedal.standalone_pending"),
+                       duration=7000, position=InfoBarPosition.TOP, parent=main_window)
         if profile_needs_proxy(profile):
             main_window.presets._install_for_profile(exe)
         else:
@@ -3495,8 +3337,6 @@ class LutTab(QWidget):
             fn = pp.get("lut_file", "")
             on = bool(pp.get("lut_enabled", False))
             set_active_lut(os.path.join(_lut_dir(), fn) if (on and fn) else "", exe)
-            if profile_has_driver_pedal_settings(pp):
-                set_logitech_profile_pedal_inversions(exe, pp)
         # Legacy global key: mirror the profile actually shown right now, for
         # any proxy DLL that hasn't been reinstalled since the per-game update.
         prof = self._cur_prof()
@@ -4462,8 +4302,6 @@ class ControlHub(FramelessWindow):
             prof = global_settings["profiles"].get(name, {})
             exe = prof.get("exe_path", "")
             if exe:
-                if profile_has_driver_pedal_settings(prof):
-                    set_logitech_profile_pedal_inversions(exe, prof)
                 self.presets._install_for_profile(exe)
         except Exception:
             pass
