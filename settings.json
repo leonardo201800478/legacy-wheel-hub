@@ -23,7 +23,7 @@
       "di_damper": 0,
       "di_center": 0,
       "di_ramp": 7,
-      "di_persist": false,
+      "di_persist": true,
       "exe_path": "",
       "logo_exe": "",
       "lut_file": "",
