@@ -16,10 +16,20 @@ Install the wheel drivers first. Nothing here ships Logitech drivers:
 
 > https://github.com/Mysli0210/Legacy-Logitech-wheels-for-W11
 
-Then grab `LegacyWheelHub_Setup.exe` from [Releases](../../releases). Plug the
-wheel in, set what you want, hit APPLY.
+**Release status:** there is currently no published GitHub Release or verified
+`LegacyWheelHub_Setup.exe` available in this repository. Do not download an
+installer from an unverified mirror.
 
-SmartScreen will warn about the installer being unsigned. More info → Run anyway.
+The DirectInput proxy is built by GitHub Actions for x86 and x64, with SHA-256
+provenance manifests. Those CI artifacts are development outputs, not a signed
+installer or a complete application release. See
+[the packaging/provenance audit](docs/PACKAGING_PROVENANCE_AUDIT_20261020.md).
+
+**Security:** do not disable Microsoft Defender, Kaspersky, SmartScreen, Memory
+Integrity, or other protections to install or run this software. If an antivirus
+detects a file, do not restore it or add an exclusion just to make the app work.
+Preserve the detection name and file hash and submit the file to the vendor for
+analysis through its official false-positive/malware-reporting process.
 
 ## What it does
 
