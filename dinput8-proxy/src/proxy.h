@@ -259,6 +259,9 @@ public:
                        static_cast<unsigned long>(hr), format);
             if (!format) {
                 LwhLogFile("DI SetDataFormat: null format pointer");
+            } else if (format->dwSize < sizeof(DIDATAFORMAT)) {
+                LwhLogFile("DI format: invalid/short DIDATAFORMAT header (dwSize=%lu)",
+                           static_cast<unsigned long>(format->dwSize));
             } else {
                 LwhLogFile(
                     "DI format: dwSize=%lu dwObjSize=%lu dwFlags=0x%08lX "
@@ -269,10 +272,7 @@ public:
                     static_cast<unsigned long>(format->dwDataSize),
                     static_cast<unsigned long>(format->dwNumObjs));
 
-                if (format->dwSize < sizeof(DIDATAFORMAT)) {
-                    LwhLogFile("DI format: invalid/short DIDATAFORMAT header (dwSize=%lu)",
-                               static_cast<unsigned long>(format->dwSize));
-                } else if (format->dwNumObjs != 0 && !format->rgodf) {
+                if (format->dwNumObjs != 0 && !format->rgodf) {
                     LwhLogFile("DI format: rgodf is null despite nonzero dwNumObjs");
                 } else if (format->dwNumObjs != 0 &&
                            format->dwObjSize < sizeof(DIOBJECTDATAFORMAT)) {
