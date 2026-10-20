@@ -1,6 +1,6 @@
 {
   "theme": "dark",
-  "language": "en",
+  "language": "pt-BR",
   "last_device": "G27",
   "auto_load": true,
   "combined_pedals": false,
@@ -11,9 +11,9 @@
   "update_seen": "",
   "button_numbers": false,
   "test_device": null,
-  "win_w": 1366,
+  "win_w": 1575,
   "win_h": 792,
-  "last_tab": "wheel",
+  "last_tab": "info",
   "ui_scale": 100,
   "profiles": {
     "Global": {

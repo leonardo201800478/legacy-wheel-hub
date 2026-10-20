@@ -673,7 +673,7 @@ SETTINGS_FILE = os.path.join(_data_dir(), "settings.json")
 STEER_CENTER = 8192
 ACCENT_FALLBACK = "#ff6a1a"
 HUB_VERSION = "v1.1.5"
-AUTHOR = "Sadooo"
+AUTHOR = "leonardo201800478"
 
 
 def windows_accent_color():
@@ -1199,8 +1199,8 @@ if CURRENT_LANG not in LANG:
     CURRENT_LANG = "en"
 
 
-REPO_URL = "https://github.com/Sadooo27/legacy-wheel-hub"
-RELEASES_API = "https://api.github.com/repos/Sadooo27/legacy-wheel-hub/releases/latest"
+REPO_URL = "https://github.com/leonardo201800478/legacy-wheel-hub"
+RELEASES_API = "https://api.github.com/repos/leonardo201800478/legacy-wheel-hub/releases/latest"
 
 
 def open_releases_page():
@@ -2790,12 +2790,14 @@ class TelemetryPanel(QWidget):
         self.steerbar = SteerBar()
         lay.addWidget(self.steerbar)
         lay.addSpacing(16)
-        prow = QHBoxLayout(); prow.setSpacing(26); prow.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+        # Leave enough width for translated pedal names such as "ACELERADOR"
+        # and "EMBREAGEM"; the bars themselves stay centered in each column.
+        prow = QHBoxLayout(); prow.setSpacing(10); prow.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         self.clutch = PedalBar(tr("home.clutch"), "#60a5fa")
         self.brake = PedalBar(tr("home.brake"), "#ff6b6b")
         self.throttle = PedalBar(tr("home.throttle"), "#5dc98a")
         for wdg in (self.clutch, self.brake, self.throttle):
-            wdg.setFixedSize(60, 150)
+            wdg.setFixedSize(86, 150)
             prow.addWidget(wdg)
         lay.addLayout(prow)
         lay.addStretch(1)
@@ -3554,7 +3556,7 @@ class InfoTab(QWidget):
     def _refresh_link(self):
         self.link.setText(
             f'<a style="color:#ff8a3d;" '
-            f'href="https://github.com/Sadooo27/legacy-wheel-hub">{tr("about.repo")}</a>')
+            f'href="{REPO_URL}">{tr("about.repo")}</a>')
 
     def _sec(self, lay, key) -> _HeaderWidget:
         hd = section_header(tr(key)); hd._key = key; self._bars.append(hd._bar); self._secs.append(hd)

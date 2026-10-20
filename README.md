@@ -1,7 +1,7 @@
 # Legacy Wheel Hub
 
-[![release](https://img.shields.io/github/v/release/Sadooo27/legacy-wheel-hub)](../../releases)
-[![downloads](https://img.shields.io/github/downloads/Sadooo27/legacy-wheel-hub/total)](../../releases)
+[![release](https://img.shields.io/github/v/release/leonardo201800478/legacy-wheel-hub)](https://github.com/leonardo201800478/legacy-wheel-hub/releases)
+[![downloads](https://img.shields.io/github/downloads/leonardo201800478/legacy-wheel-hub/total)](https://github.com/leonardo201800478/legacy-wheel-hub/releases)
 [![license](https://img.shields.io/badge/license-GPLv3-blue)](LICENSE)
 ![platform](https://img.shields.io/badge/platform-Windows%2010%2F11-blue)
 
