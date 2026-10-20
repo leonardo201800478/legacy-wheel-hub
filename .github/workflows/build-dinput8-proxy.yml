@@ -24,9 +24,61 @@ jobs:
         run: cmake -S dinput8-proxy -B build/dinput8-proxy -A ${{ matrix.arch }}
       - name: Compile
         run: cmake --build build/dinput8-proxy --config Release
+      - name: Generate provenance manifest
+        shell: pwsh
+        env:
+          BUILD_ARCH: ${{ matrix.arch }}
+          SOURCE_COMMIT: ${{ github.sha }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          $dll = Join-Path $PWD "build/dinput8-proxy/Release/dinput8.dll"
+          if (-not (Test-Path -LiteralPath $dll -PathType Leaf)) {
+            throw "Expected proxy DLL was not produced: $dll"
+          }
+
+          $stream = [System.IO.File]::OpenRead($dll)
+          try {
+            $reader = [System.IO.BinaryReader]::new($stream)
+            if ($reader.ReadUInt16() -ne 0x5A4D) {
+              throw "Output does not have an MZ header"
+            }
+            $stream.Position = 0x3C
+            $peOffset = $reader.ReadUInt32()
+            if ($peOffset -gt ($stream.Length - 6)) {
+              throw "Invalid PE header offset"
+            }
+            $stream.Position = $peOffset
+            if ($reader.ReadUInt32() -ne 0x00004550) {
+              throw "Output does not have a PE signature"
+            }
+            $machine = $reader.ReadUInt16()
+          }
+          finally {
+            $stream.Dispose()
+          }
+
+          $expectedMachine = if ($env:BUILD_ARCH -eq "Win32") { 0x014C } else { 0x8664 }
+          if ($machine -ne $expectedMachine) {
+            throw ("Architecture mismatch: expected 0x{0:X4}, got 0x{1:X4}" -f $expectedMachine, $machine)
+          }
+
+          $hash = (Get-FileHash -LiteralPath $dll -Algorithm SHA256).Hash.ToLowerInvariant()
+          $manifest = [ordered]@{
+            file = "dinput8.dll"
+            source_commit = $env:SOURCE_COMMIT
+            workflow_arch = $env:BUILD_ARCH
+            pe_machine = ("0x{0:X4}" -f $machine)
+            size_bytes = (Get-Item -LiteralPath $dll).Length
+            sha256 = $hash
+          }
+          $manifestPath = Join-Path (Split-Path $dll -Parent) "provenance.json"
+          $manifest | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $manifestPath -Encoding utf8
+          Get-Content -LiteralPath $manifestPath
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
           name: dinput8-proxy-${{ matrix.arch }}
-          path: build/dinput8-proxy/Release/dinput8.dll
+          path: |
+            build/dinput8-proxy/Release/dinput8.dll
+            build/dinput8-proxy/Release/provenance.json
           if-no-files-found: error
