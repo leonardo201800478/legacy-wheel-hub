@@ -88,4 +88,12 @@ A etapa falha se a DLL não existir, se o cabeçalho MZ/PE estiver inválido ou 
 
 Commit da alteração do workflow: `0a1fd2926630a41f7dca4f5022e0f38813f92eae`.
 
-**Limitação:** o workflow foi atualizado no repositório, mas sua execução pós-alteração e a geração real dos artefatos ainda precisam ser confirmadas em GitHub Actions. Esse ajuste melhora a rastreabilidade dos binários produzidos pelo CI, mas não fecha, sozinho, a cadeia do instalador original: ainda falta integrar os artefatos verificados ao processo de empacotamento do aplicativo.
+**Execução pós-alteração confirmada:** [GitHub Actions run #5](https://github.com/leonardo201800478/legacy-wheel-hub/actions/runs/39440782670) terminou com sucesso nos jobs Win32 e x64, incluindo geração dos manifestos e upload dos dois artefatos.
+
+Hashes SHA-256 extraídos dos logs do build:
+- **Win32:** 47.616 bytes; PE machine `0x014C`; SHA-256 `12a768a4ad27099f6c0db1e2332a1c3e7bd9b9030f47d56e0c38dc19c9f873bf`.
+- **x64:** 54.272 bytes; PE machine `0x8664`; SHA-256 `599b21eb10f2fd140f9352f454d42ac2ffb38a6a6396b952afa10188dc4067d5`.
+
+O tamanho da DLL x64 do CI coincide com o tamanho da compilação local relatada pelo usuário, mas o hash é diferente do hash local `271263248CB6DEFB41D5E5FC50E75B954FFAA0F37A8E0E8693E29E0F87DC28C7`. Portanto, são arquivos diferentes byte a byte; isso, isoladamente, não demonstra adulteração, pois compiladores, opções e fontes exatas podem variar.
+
+A melhoria torna os artefatos recém-produzidos pelo CI rastreáveis. **A cadeia do instalador original continua aberta** até que o empacotamento real seja localizado, versionado e conectado aos artefatos verificados.
