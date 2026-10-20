@@ -34,27 +34,26 @@ inline bool LwhReadBoolDword(const wchar_t* name)
 }
 
 inline void LwhInvertConfiguredAxis(BYTE* state, DWORD stateSize,
+                                    const LONG* axisOffsets,
                                     const wchar_t* enabledName,
-                                    const wchar_t* offsetName,
+                                    const wchar_t* axisName,
                                     const wchar_t* minName,
                                     const wchar_t* maxName)
 {
-    if (!LwhReadBoolDword(enabledName)) return;
+    if (!state || !axisOffsets || !LwhReadBoolDword(enabledName)) return;
 
-    DWORD rawOffset = 0xFFFFFFFFu;
-    DWORD rawMin = 0;
-    DWORD rawMax = 65535;
-    if (!LwhReadDwordForThisGame(offsetName, &rawOffset) || rawOffset == 0xFFFFFFFFu)
-        return;
+    DWORD rawAxis = 0xFFFFFFFFu, rawMin = 0, rawMax = 65535;
+    if (!LwhReadDwordForThisGame(axisName, &rawAxis) || rawAxis > 7) return;
     (void)LwhReadDwordForThisGame(minName, &rawMin);
     (void)LwhReadDwordForThisGame(maxName, &rawMax);
 
     const LONG minimum = static_cast<LONG>(rawMin);
     const LONG maximum = static_cast<LONG>(rawMax);
-    const size_t offset = static_cast<size_t>(rawOffset);
-    if (maximum <= minimum || offset % alignof(LONG) != 0 ||
-        offset > stateSize || sizeof(LONG) > stateSize - offset)
-        return;
+    const LONG signedOffset = axisOffsets[rawAxis];
+    if (signedOffset < 0 || maximum <= minimum) return;
+    const size_t offset = static_cast<size_t>(signedOffset);
+    if (offset % alignof(LONG) != 0 || offset > stateSize ||
+        sizeof(LONG) > stateSize - offset) return;
 
     LONG current = 0;
     std::memcpy(&current, state + offset, sizeof(current));
@@ -63,19 +62,34 @@ inline void LwhInvertConfiguredAxis(BYTE* state, DWORD stateSize,
     const int64_t inverted = static_cast<int64_t>(minimum) +
                              static_cast<int64_t>(maximum) - current;
     if (inverted < std::numeric_limits<LONG>::min() ||
-        inverted > std::numeric_limits<LONG>::max())
-        return;
+        inverted > std::numeric_limits<LONG>::max()) return;
     const LONG result = static_cast<LONG>(inverted);
     std::memcpy(state + offset, &result, sizeof(result));
 }
 
-inline void LwhApplyPedalInversion(void* buffer, DWORD stateSize)
+inline int LwhAxisIndexFromGuid(REFGUID guid, DWORD objectType)
+{
+    if (IsEqualGUID(guid, GUID_XAxis)) return 0;
+    if (IsEqualGUID(guid, GUID_YAxis)) return 1;
+    if (IsEqualGUID(guid, GUID_ZAxis)) return 2;
+    if (IsEqualGUID(guid, GUID_RxAxis)) return 3;
+    if (IsEqualGUID(guid, GUID_RyAxis)) return 4;
+    if (IsEqualGUID(guid, GUID_RzAxis)) return 5;
+    if (IsEqualGUID(guid, GUID_Slider)) {
+        const DWORD instance = DIDFT_GETINSTANCE(objectType);
+        return instance < 2 ? static_cast<int>(6 + instance) : -1;
+    }
+    return -1;
+}
+
+inline void LwhApplyPedalInversion(void* buffer, DWORD stateSize,
+                                   const LONG* axisOffsets)
 {
     BYTE* state = static_cast<BYTE*>(buffer);
-    LwhInvertConfiguredAxis(state, stateSize, L"InvertThrottle",
-                            L"ThrottleOffset", L"ThrottleMin", L"ThrottleMax");
-    LwhInvertConfiguredAxis(state, stateSize, L"InvertBrake",
-                            L"BrakeOffset", L"BrakeMin", L"BrakeMax");
-    LwhInvertConfiguredAxis(state, stateSize, L"InvertClutch",
-                            L"ClutchOffset", L"ClutchMin", L"ClutchMax");
+    LwhInvertConfiguredAxis(state, stateSize, axisOffsets, L"InvertThrottle",
+                            L"ThrottleAxis", L"ThrottleMin", L"ThrottleMax");
+    LwhInvertConfiguredAxis(state, stateSize, axisOffsets, L"InvertBrake",
+                            L"BrakeAxis", L"BrakeMin", L"BrakeMax");
+    LwhInvertConfiguredAxis(state, stateSize, axisOffsets, L"InvertClutch",
+                            L"ClutchAxis", L"ClutchMin", L"ClutchMax");
 }
