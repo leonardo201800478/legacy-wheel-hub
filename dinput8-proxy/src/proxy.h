@@ -241,7 +241,78 @@ public:
         return hr;
     }
     LWH_FWD(GetDeviceData, (DWORD a, LPDIDEVICEOBJECTDATA b, LPDWORD c, DWORD d), (a, b, c, d))
-    LWH_FWD(SetDataFormat, (LPCDIDATAFORMAT a), (a))
+
+    HRESULT STDMETHODCALLTYPE SetDataFormat(LPCDIDATAFORMAT format) override
+    {
+        const HRESULT hr = real_->SetDataFormat(format);
+
+        // Opt-in diagnostic: record the exact DirectInput object layout
+        // requested by the game, but never record live axis values.
+        char enabled[8]{};
+        const bool logFormat =
+            GetEnvironmentVariableA("LWH_DI_FORMAT_DEBUG", enabled,
+                                    static_cast<DWORD>(sizeof(enabled))) > 0 &&
+            enabled[0] == '1';
+
+        if (logFormat) {
+            LwhLogFile("DI SetDataFormat result=0x%08lX format=%p",
+                       static_cast<unsigned long>(hr), format);
+            if (!format) {
+                LwhLogFile("DI SetDataFormat: null format pointer");
+            } else {
+                LwhLogFile(
+                    "DI format: dwSize=%lu dwObjSize=%lu dwFlags=0x%08lX "
+                    "dwDataSize=%lu dwNumObjs=%lu",
+                    static_cast<unsigned long>(format->dwSize),
+                    static_cast<unsigned long>(format->dwObjSize),
+                    static_cast<unsigned long>(format->dwFlags),
+                    static_cast<unsigned long>(format->dwDataSize),
+                    static_cast<unsigned long>(format->dwNumObjs));
+
+                if (format->dwNumObjs != 0 && !format->rgodf) {
+                    LwhLogFile("DI format: rgodf is null despite nonzero dwNumObjs");
+                } else if (format->rgodf) {
+                    // A cap keeps diagnostics bounded if a malformed caller
+                    // supplies an unreasonable object count.
+                    const DWORD count = format->dwNumObjs < 256
+                        ? format->dwNumObjs : 256;
+                    for (DWORD i = 0; i < count; ++i) {
+                        const DIOBJECTDATAFORMAT& obj = format->rgodf[i];
+                        if (obj.pguid) {
+                            const GUID& g = *obj.pguid;
+                            LwhLogFile(
+                                "DI object[%lu]: GUID=%08lX-%04X-%04X-"
+                                "%02X%02X-%02X%02X%02X%02X%02X%02X "
+                                "dwOfs=%lu dwType=0x%08lX dwFlags=0x%08lX",
+                                static_cast<unsigned long>(i),
+                                static_cast<unsigned long>(g.Data1),
+                                static_cast<unsigned int>(g.Data2),
+                                static_cast<unsigned int>(g.Data3),
+                                g.Data4[0], g.Data4[1], g.Data4[2], g.Data4[3],
+                                g.Data4[4], g.Data4[5], g.Data4[6], g.Data4[7],
+                                static_cast<unsigned long>(obj.dwOfs),
+                                static_cast<unsigned long>(obj.dwType),
+                                static_cast<unsigned long>(obj.dwFlags));
+                        } else {
+                            LwhLogFile(
+                                "DI object[%lu]: GUID=(null) dwOfs=%lu "
+                                "dwType=0x%08lX dwFlags=0x%08lX",
+                                static_cast<unsigned long>(i),
+                                static_cast<unsigned long>(obj.dwOfs),
+                                static_cast<unsigned long>(obj.dwType),
+                                static_cast<unsigned long>(obj.dwFlags));
+                        }
+                    }
+                    if (format->dwNumObjs > count)
+                        LwhLogFile("DI format: truncated object list at %lu of %lu",
+                                   static_cast<unsigned long>(count),
+                                   static_cast<unsigned long>(format->dwNumObjs));
+                }
+            }
+        }
+        return hr;
+    }
+
     LWH_FWD(SetEventNotification, (HANDLE a), (a))
     LWH_FWD(SetCooperativeLevel, (HWND a, DWORD b), (a, b))
     LWH_FWD(GetObjectInfo, (typename T::ObjInst a, DWORD b, DWORD c), (a, b, c))
