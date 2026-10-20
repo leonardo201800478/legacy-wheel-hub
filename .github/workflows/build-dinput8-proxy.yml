@@ -1,0 +1,32 @@
+name: Build DirectInput proxy
+
+on:
+  push:
+    paths:
+      - "dinput8-proxy/**"
+      - ".github/workflows/build-dinput8-proxy.yml"
+  pull_request:
+    paths:
+      - "dinput8-proxy/**"
+      - ".github/workflows/build-dinput8-proxy.yml"
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [Win32, x64]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure
+        run: cmake -S dinput8-proxy -B build/dinput8-proxy -A ${{ matrix.arch }}
+      - name: Compile
+        run: cmake --build build/dinput8-proxy --config Release
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dinput8-proxy-${{ matrix.arch }}
+          path: build/dinput8-proxy/Release/dinput8.dll
+          if-no-files-found: error
