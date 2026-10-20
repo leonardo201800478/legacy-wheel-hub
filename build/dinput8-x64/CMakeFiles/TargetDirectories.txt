@@ -1,0 +1,3 @@
+C:/Users/leost/legacy-wheel-hub/build/dinput8-x64/CMakeFiles/dinput8.dir
+C:/Users/leost/legacy-wheel-hub/build/dinput8-x64/CMakeFiles/ALL_BUILD.dir
+C:/Users/leost/legacy-wheel-hub/build/dinput8-x64/CMakeFiles/ZERO_CHECK.dir
