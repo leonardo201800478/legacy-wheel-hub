@@ -24,6 +24,7 @@ import struct
 import sys
 import threading
 import time
+import xml.etree.ElementTree as ET
 from typing import Any
 
 try:
@@ -395,6 +396,115 @@ def set_active_lut(path, exe_path=None):
         pass
 
 
+def set_logitech_profile_pedal_inversions(exe_path, profile):
+    """Set pedal-axis signs in the matching Logitech Gaming Software profile.
+
+    LGS profile XML stores axis direction in AxisDynamics/AxisDef Sign.
+    Pedal-to-axis mappings are selected explicitly in the app because the
+    profile's numeric Mapping IDs do not establish which pedal an axis is.
+    This edits the installed LGS profile itself; the game still reads input
+    from the Logitech driver, with no pedal-input proxy hook.
+    """
+    if not exe_path:
+        return False
+    game_exe = os.path.basename(resolve_game_exe(exe_path) or exe_path).casefold()
+    appdata_roots = [os.environ.get("LOCALAPPDATA"), os.environ.get("APPDATA")]
+    profile_dirs = []
+    for root in filter(None, appdata_roots):
+        profile_dirs.extend((
+            os.path.join(root, "Logitech", "Logitech Gaming Software", "profiles"),
+            os.path.join(root, "Logitech", "Gaming Software", "profiles"),
+        ))
+    axis_for_pedal = {
+        pedal: str((profile or {}).get("lgs_axis_" + pedal, "")).upper()
+        for pedal in ("throttle", "brake", "clutch")
+    }
+    if not any(axis_for_pedal.values()):
+        return False
+    found = False
+    for profile_dir in dict.fromkeys(profile_dirs):
+        if not os.path.isdir(profile_dir):
+            continue
+        for folder, _, files in os.walk(profile_dir):
+            for filename in files:
+                if not filename.lower().endswith(".xml"):
+                    continue
+                path = os.path.join(folder, filename)
+                try:
+                    tree = ET.parse(path)
+                    root = tree.getroot()
+                except (ET.ParseError, OSError):
+                    continue
+
+                def local(tag):
+                    return tag.rsplit("}", 1)[-1]
+
+                targets = [child.text.strip().casefold()
+                           for target in root.iter() if local(target.tag) == "Target"
+                           for child in target if local(child.tag) == "Name" and child.text]
+                if game_exe not in {os.path.basename(target) for target in targets}:
+                    continue
+                assignments = next((node for node in root.iter()
+                                    if local(node.tag) == "Assignments"
+                                    and node.get("DeviceModel") == "57"), None)
+                if assignments is None:
+                    continue
+                namespace = ""
+                if root.tag.startswith("{"):
+                    namespace = root.tag[1:].split("}", 1)[0]
+                    ET.register_namespace("", namespace)
+                tag = lambda name: f"{{{namespace}}}{name}" if namespace else name
+                dynamics = next((node for node in assignments
+                                 if local(node.tag) == "AxisDynamics"), None)
+                if dynamics is None:
+                    dynamics = ET.SubElement(assignments, tag("AxisDynamics"))
+                defs = {node.get("Axis", "").upper(): node for node in dynamics
+                        if local(node.tag) == "AxisDef"}
+                changed = False
+                for pedal, axis in axis_for_pedal.items():
+                    if not axis or not axis.replace("_", "").isalnum():
+                        continue
+                    axis_def = defs.get(axis)
+                    if axis_def is None:
+                        axis_def = ET.SubElement(dynamics, tag("AxisDef"), {
+                            "Axis": axis, "Acceleration": "50", "Speed": "100",
+                            "Deadzone": "0", "DeadzoneSign": "0"})
+                        defs[axis] = axis_def
+                    desired = "-1" if (profile or {}).get("invert_" + pedal, False) else "1"
+                    if axis_def.get("Sign") != desired:
+                        axis_def.set("Sign", desired)
+                        changed = True
+                if changed:
+                    try:
+                        if not os.path.exists(path + ".lwh.bak"):
+                            with open(path, "rb") as source, open(path + ".lwh.bak", "wb") as backup:
+                                backup.write(source.read())
+                        temp_path = path + ".lwh.tmp"
+                        tree.write(temp_path, encoding="utf-8", xml_declaration=True)
+                        os.replace(temp_path, path)
+                    except OSError:
+                        try:
+                            if os.path.exists(path + ".lwh.tmp"):
+                                os.remove(path + ".lwh.tmp")
+                        except OSError:
+                            pass
+                        continue
+                found = True
+    return found
+
+
+def profile_needs_proxy(profile):
+    profile = profile or {}
+    return bool(profile.get("lut_enabled"))
+
+
+def profile_has_driver_pedal_settings(profile):
+    profile = profile or {}
+    return bool(profile.get("driver_pedal_inversion_configured") or any(
+        profile.get("invert_" + pedal, False)
+        for pedal in ("throttle", "brake", "clutch")))
+
+
 _ICON_PROVIDER = None
 _ICON_CACHE = {}
 
@@ -581,13 +691,21 @@ def install_proxy_for(exe_path, overwrite_foreign=False):
     exe_dir = os.path.dirname(real)
     dst = os.path.join(exe_dir, PROXY_DLL)
     marker = os.path.join(exe_dir, PROXY_MARKER)
+    marker_text = f"Legacy Wheel Hub proxy v2 ({arch})\n"
     if os.path.isfile(dst) and not os.path.isfile(marker) and not overwrite_foreign:
         return ("foreign", exe_dir)
+    if os.path.isfile(dst) and os.path.isfile(marker):
+        try:
+            with open(marker, "r", encoding="utf-8") as m:
+                if m.read() == marker_text:
+                    return (True, exe_dir)
+        except Exception:
+            pass
     try:
         with open(src, "rb") as s, open(dst, "wb") as d:
             d.write(s.read())
         with open(marker, "w", encoding="utf-8") as m:
-            m.write(f"Legacy Wheel Hub proxy ({arch})\n")
+            m.write(marker_text)
     except Exception:
         return (False, "proxy.err_write")
     return (True, exe_dir)
@@ -727,6 +845,7 @@ DEFAULT_RAMP = 7
 
 LANG = {
     "en": {
+        "pedal.invert": "Invert pedal axis", "pedal.axis_map": "Choose Logitech axis…", "pedal.axis_prompt": "Which LGS AxisDef axis represents this pedal? The XML does not identify pedals by itself.", "pedal.axis_none": "Not set", "pedal.axis_duplicate": "That Logitech axis is already assigned to another pedal.", "pedal.lgs_profile_required": "Select the game's executable, assign each pedal to its LGS AxisDef from the pedal menu, and make sure its profile is imported into Logitech Gaming Software.", "pedal.lgs_updated": "Logitech profile updated. Restart Logitech Gaming Software and the game to apply the change.",
         "nav.home": "Home", "nav.wheel": "Wheel Settings", "nav.ffb": "FFB Test",
         "nav.input": "Input Monitor", "nav.apply": "Apply Settings",
         "nav.theme": "Toggle Theme", "nav.about": "About",
@@ -744,7 +863,7 @@ LANG = {
         "input.mode_numbers": "Show button numbers", "input.mode_names": "Show button names",
         "ui.autogame": "Auto-switch by game", "ui.autogame_h": "Applies the profile whose game .exe is running. Falls back to Global when none is.", "game.detected": "Game detected", "game.detected_body": "{0} preset applied.",
         "set.startup": "Start with Windows", "set.startup_h": "Launches the app when you sign in. Off by default.",
-        "set.pedals": "Combined pedals (accelerator + brake)", "set.pedals_h": "Reports accelerator and brake on one shared axis for older games. Applies globally to this wheel; restart games after changing it.",
+        "set.pedals": "Combined pedals (one axis: accelerator + brake)", "set.pedals_h": "Matches the legacy Logitech driver option for older games that expect accelerator and brake on the same axis. Applies globally to this wheel; restart games after changing it.",
         "set.updates_sec": "UPDATES", "set.updates": "Check for updates on startup", "set.updates_h": "Checks GitHub once a day. Nothing is installed automatically.",
         "set.check_now": "Check now", "set.checking": "Checking\u2026",
         "upd.available": "Update available", "upd.available_body": "Version {0} is available.", "upd.open": "Download",
@@ -843,6 +962,7 @@ LANG = {
         "info.active": "Active", "info.standby": "Standby",
     },
     "tr": {
+        "pedal.invert": "Pedal eksenini ters çevir", "pedal.axis_map": "Logitech eksenini seç…", "pedal.axis_prompt": "Bu pedalı LGS AxisDef içinde hangi eksen temsil ediyor? XML tek başına pedalları tanımlamaz.", "pedal.axis_none": "Ayarlanmadı", "pedal.axis_duplicate": "Bu Logitech ekseni başka bir pedala zaten atanmış.", "pedal.lgs_profile_required": "Oyunun çalıştırılabilir dosyasını seçin, her pedala pedal menüsünden bir LGS AxisDef atayın ve profilin Logitech Gaming Software'e aktarıldığını doğrulayın.", "pedal.lgs_updated": "Logitech profili güncellendi. Değişikliğin uygulanması için Logitech Gaming Software'i ve oyunu yeniden başlatın.",
         "nav.home": "Ana Sayfa", "nav.wheel": "Direksiyon Ayarları", "nav.ffb": "FFB Testi",
         "nav.input": "Giriş İzleyici", "nav.apply": "Ayarları Uygula",
         "nav.theme": "Tema Değiştir", "nav.about": "Hakkında",
@@ -860,7 +980,7 @@ LANG = {
         "input.mode_numbers": "Buton numaralarını göster", "input.mode_names": "Buton adlarını göster",
         "ui.autogame": "Oyuna göre geç", "ui.autogame_h": "Çalışan oyunun .exe dosyasına ait profili uygular. Hiçbiri çalışmıyorsa Global'e döner.", "game.detected": "Oyun algılandı", "game.detected_body": "{0} preseti uygulandı.",
         "set.startup": "Windows ile başlat", "set.startup_h": "Oturum açtığınızda uygulamayı başlatır. Varsayılan olarak kapalıdır.",
-        "set.pedals": "Birleşik pedallar (gaz + fren)", "set.pedals_h": "Eski oyunlar için gaz ve freni tek eksende bildirir. Bu direksiyon için genel olarak uygulanır; değişiklikten sonra oyunu yeniden başlatın.",
+        "set.pedals": "Birleşik pedallar (tek eksen: gaz + fren)", "set.pedals_h": "Gaz ve frenin aynı eksende olmasını bekleyen eski oyunlar için Logitech sürücüsündeki klasik seçeneği uygular. Bu direksiyon için genel olarak geçerlidir; değiştirdikten sonra oyunları yeniden başlatın.",
         "set.updates_sec": "GÜNCELLEMELER", "set.updates": "Açılışta güncellemeleri denetle", "set.updates_h": "Günde bir kez GitHub'ı denetler. Hiçbir şey otomatik kurulmaz.",
         "set.check_now": "Şimdi denetle", "set.checking": "Denetleniyor\u2026",
         "upd.available": "Güncelleme mevcut", "upd.available_body": "{0} sürümü mevcut.", "upd.open": "İndir",
@@ -959,6 +1079,7 @@ LANG = {
         "info.active": "Aktif", "info.standby": "Beklemede",
     },
     "de": {
+        "pedal.invert": "Pedalachse umkehren", "pedal.axis_map": "Logitech-Achse wählen…", "pedal.axis_prompt": "Welche Achse in LGS AxisDef steht für dieses Pedal? Die XML-Datei ordnet Pedale nicht selbst zu.", "pedal.axis_none": "Nicht festgelegt", "pedal.axis_duplicate": "Diese Logitech-Achse ist bereits einem anderen Pedal zugeordnet.", "pedal.lgs_profile_required": "Wähle die Spiel-EXE, weise jedem Pedal über sein Menü eine LGS-AxisDef zu und stelle sicher, dass das Profil in Logitech Gaming Software importiert ist.", "pedal.lgs_updated": "Logitech-Profil aktualisiert. Starte Logitech Gaming Software und das Spiel neu, um die Änderung anzuwenden.",
         "nav.home": "Startseite", "nav.wheel": "Lenkrad-Einstellungen", "nav.ffb": "FFB-Test",
         "nav.input": "Eingangsmonitor", "nav.apply": "Einstellungen anwenden",
         "nav.theme": "Design wechseln", "nav.about": "Über",
@@ -976,7 +1097,7 @@ LANG = {
         "input.mode_numbers": "Tastennummern anzeigen", "input.mode_names": "Tastennamen anzeigen",
         "ui.autogame": "Auto-Wechsel je Spiel", "ui.autogame_h": "Wendet das Profil an, dessen Spiel-EXE läuft. Ohne laufendes Spiel gilt Global.", "game.detected": "Spiel erkannt", "game.detected_body": "Voreinstellung {0} angewendet.",
         "set.startup": "Mit Windows starten", "set.startup_h": "Startet die App bei der Anmeldung. Standardmäßig aus.",
-        "set.pedals": "Pedale kombinieren (Gas + Bremse)", "set.pedals_h": "Meldet Gas und Bremse für ältere Spiele auf einer gemeinsamen Achse. Gilt global für dieses Lenkrad; Spiele nach der Änderung neu starten.",
+        "set.pedals": "Pedale kombinieren (eine Achse: Gas + Bremse)", "set.pedals_h": "Entspricht der klassischen Logitech-Treibereinstellung für ältere Spiele, die Gas und Bremse auf derselben Achse erwarten. Gilt global für dieses Lenkrad; Spiele nach der Änderung neu starten.",
         "set.updates_sec": "UPDATES", "set.updates": "Beim Start nach Updates suchen", "set.updates_h": "Prüft einmal täglich auf GitHub. Es wird nichts automatisch installiert.",
         "set.check_now": "Jetzt prüfen", "set.checking": "Wird geprüft\u2026",
         "upd.available": "Update verfügbar", "upd.available_body": "Version {0} ist verfügbar.", "upd.open": "Herunterladen",
@@ -1075,13 +1196,14 @@ LANG = {
         "info.active": "Aktiv", "info.standby": "Standby",
     },
     "es": {
+        "pedal.invert":"Invertir eje del pedal", "pedal.axis_map":"Elegir eje Logitech…", "pedal.axis_prompt":"¿Qué eje de LGS AxisDef representa este pedal? El XML no asigna los pedales por sí solo.", "pedal.axis_none":"Sin asignar", "pedal.axis_duplicate":"Ese eje Logitech ya está asignado a otro pedal.", "pedal.lgs_profile_required":"Selecciona el ejecutable del juego, asigna un LGS AxisDef a cada pedal desde su menú y asegúrate de que el perfil esté importado en Logitech Gaming Software.", "pedal.lgs_updated":"Perfil de Logitech actualizado. Reinicia Logitech Gaming Software y el juego para aplicar el cambio.",
         "nav.home":"Inicio", "nav.wheel":"Ajustes del volante", "nav.ffb":"Prueba de FFB", "nav.input":"Monitor de entradas", "nav.apply":"Aplicar ajustes", "nav.theme":"Cambiar tema", "nav.about":"Acerca de",
         "conn.connecting":"Conectando…", "conn.not_connected":"Desconectado", "conn.connected":"Conectado", "conn.test":"Modo de prueba",
         "home.title":"Telemetría en tiempo real", "home.steering":"ÁNGULO DEL VOLANTE", "home.clutch":"EMBRAGUE", "home.brake":"FRENO", "home.throttle":"ACELERADOR", "home.center":"Centrar volante", "home.na":"N/D",
         "prof.label":"PERFIL", "prof.auto":"Carga automática", "prof.add":"Nuevo perfil", "prof.dup":"Duplicar perfil", "prof.ren":"Renombrar perfil", "prof.del":"Eliminar perfil", "prof.new_title":"Nuevo perfil", "prof.new_hint":"Nombre del perfil", "prof.ren_title":"Renombrar perfil", "prof.del_title":"Eliminar perfil", "prof.del_msg":"¿Eliminar el perfil «{0}»? Esta acción no se puede deshacer.", "prof.name_taken":"Nombre ya utilizado", "prof.name_taken_body":"Ya existe un perfil llamado «{0}»; no se cambió el nombre.", "prof.copy_suffix":" Copia", "prof.edit":"Editar perfil", "prof.exe":"Ejecutable del juego", "prof.exe_hint":"En juegos con lanzador UE, selecciona el ...-Shipping.exe real si no se encuentra automáticamente.", "prof.logo":"Icono (de un .exe)", "prof.logo_pick":"Elegir icono…", "prof.exe_pick":"Elegir juego…", "prof.name_lbl":"Nombre del perfil",
         "dlg.ok":"Aceptar", "dlg.cancel":"Cancelar", "dlg.delete":"Eliminar", "ffb.reset_ok":"FFB del controlador restablecido", "ffb.reset_ok_body":"Se eliminaron todos los valores del Registro de FFB escritos por la aplicación.",
         "input.mode_numbers":"Mostrar números de botones", "input.mode_names":"Mostrar nombres de botones", "ui.autogame":"Cambiar perfil según el juego", "ui.autogame_h":"Aplica el perfil del ejecutable del juego que está en marcha. Usa Global cuando no haya ningún juego asociado en ejecución.", "game.detected":"Juego detectado", "game.detected_body":"Se aplicó el perfil {0}.",
-        "set.startup":"Iniciar con Windows", "set.startup_h":"Abre la aplicación al iniciar sesión. Desactivado de forma predeterminada.", "set.pedals":"Pedales combinados (acelerador + freno)", "set.pedals_h":"Usa un eje compartido para el acelerador y el freno en juegos antiguos. Se aplica globalmente a este volante; reinicia los juegos después de cambiarlo.", "set.updates_sec":"ACTUALIZACIONES", "set.updates":"Buscar actualizaciones al iniciar", "set.updates_h":"Comprueba GitHub una vez al día. No se instala nada automáticamente.", "set.check_now":"Buscar ahora", "set.checking":"Buscando…", "upd.available":"Actualización disponible", "upd.available_body":"La versión {0} está disponible.", "upd.open":"Descargar", "upd.current":"Está actualizado", "upd.current_body":"Estás usando la versión más reciente.", "upd.failed":"Error al buscar actualizaciones", "upd.failed_body":"No se pudo conectar con GitHub. Comprueba la conexión e inténtalo de nuevo.",
+        "set.startup":"Iniciar con Windows", "set.startup_h":"Abre la aplicación al iniciar sesión. Desactivado de forma predeterminada.", "set.pedals":"Pedales combinados (un eje: acelerador + freno)", "set.pedals_h":"Equivale a la opción clásica del controlador Logitech para juegos antiguos que esperan el acelerador y el freno en el mismo eje. Se aplica globalmente a este volante; reinicia los juegos después de cambiarlo.", "set.updates_sec":"ACTUALIZACIONES", "set.updates":"Buscar actualizaciones al iniciar", "set.updates_h":"Comprueba GitHub una vez al día. No se instala nada automáticamente.", "set.check_now":"Buscar ahora", "set.checking":"Buscando…", "upd.available":"Actualización disponible", "upd.available_body":"La versión {0} está disponible.", "upd.open":"Descargar", "upd.current":"Está actualizado", "upd.current_body":"Estás usando la versión más reciente.", "upd.failed":"Error al buscar actualizaciones", "upd.failed_body":"No se pudo conectar con GitHub. Comprueba la conexión e inténtalo de nuevo.",
         "wheel.title":"Ajustes del volante", "wheel.ffb":"Force Feedback", "wheel.overall":"Intensidad general de los efectos", "wheel.overall_h":"Establece el 101 % para corregir la zona muerta central del FFB en la mayoría de los juegos. (Requiere reiniciar el juego)", "wheel.spring":"Efecto de muelle", "wheel.spring_h":"Muelle controlado por el controlador (recomendado: 0 %).", "wheel.damper":"Efecto de amortiguación", "wheel.damper_h":"Amortiguación controlada por el controlador (recomendado: 0 %).", "wheel.center_cb":"Activar el muelle de centrado en juegos con FFB", "wheel.center":"Muelle de centrado", "wheel.center_h":"Intensidad de centrado controlada por el controlador.", "wheel.ramp":"Progresión del centrado", "wheel.ramp_h":"Ajusta únicamente el muelle de centrado; no tiene efecto cuando está en 0. Valor predeterminado: 7.", "wheel.steering":"Dirección", "wheel.rotation":"Ángulo de giro", "wheel.rotation_h":"Ángulo máximo de giro del volante.",
         "ffb.title":"PRUEBA DE FORCE FEEDBACK", "ffb.subtitle":"Prueba directamente el motor FFB. Se recomienda hacerlo cuando ningún juego esté usando el volante.", "ffb.strength":"Intensidad de la prueba", "ffb.strength_h":"Intensidad usada en las pruebas Empuje, Muelle y Barrido.", "ffb.push_l":"Empujar a la izquierda", "ffb.push_r":"Empujar a la derecha", "ffb.spring":"Muelle (centrado)", "ffb.spring_stop":"Detener muelle", "ffb.sweep":"Barrido automático", "ffb.sweep_stop":"Detener barrido", "ffb.advanced":"PRUEBAS AVANZADAS DEL MOTOR", "ffb.pulse_l":"Pulso a la izquierda", "ffb.pulse_r":"Pulso a la derecha", "ffb.vibe_light":"Vibración leve", "ffb.vibe_med":"Vibración media", "ffb.vibe_fast":"Vibración rápida", "ffb.vibe_heavy":"Vibración intensa", "ffb.stop":"DETENER TODAS LAS FUERZAS", "ffb.reset":"Restablecer FFB del controlador", "ffb.reset_h":"Elimina todas las anulaciones del Registro de FFB del controlador escritas por esta aplicación.",
         "input.title":"Monitor de entradas", "input.led":"Prueba de saludo de LED", "input.wheel":"VOLANTE", "input.shifter":"PALANCA DE CAMBIOS", "input.gear":"MARCHA (PATRÓN EN H)", "input.lpad":"LEVA IZQUIERDA", "input.rpad":"LEVA DERECHA", "input.face":"BOTONES PRINCIPALES", "input.dpad":"CRUCETA", "input.horn":"CLAXON", "input.led_nc":"El volante no está conectado.", "input.led_g27":"La prueba de LED solo funciona con G27 (el DFGT no tiene LED de RPM).", "input.led_run":"Saludo de LED… (funciona si el controlador reenvía el informe)",
@@ -1092,13 +1214,14 @@ LANG = {
         "set.title":"AJUSTES", "set.appearance":"APARIENCIA", "set.general":"GENERAL", "set.testing":"PRUEBAS", "set.theme":"Tema", "set.language":"Idioma", "set.tray":"Minimizar a la bandeja del sistema", "set.tray_h":"Si está activado, el botón de minimizar oculta la aplicación en la bandeja del sistema (iconos ocultos).", "set.devmode":"Modo de detección del dispositivo", "set.devmode_h":"Fuerza una distribución del volante sin hardware conectado. «Auto» usa la detección real.", "set.ui_scale":"Escala de la interfaz", "set.ui_scale_h":"Amplía toda la interfaz en pantallas de alta resolución (1440p/4K). Se aplica al reiniciar la aplicación.", "set.restart_hint":"Reinicia la aplicación para aplicar la nueva escala.", "info.opmode_active":"Modo avanzado nativo (desbloqueado)", "info.opmode_idle":"Inactivo / Desconectado", "info.active":"Activo", "info.standby":"En espera"
     },
     "pt-BR": {
+        "pedal.invert":"Inverter eixo do pedal", "pedal.axis_map":"Escolher eixo Logitech…", "pedal.axis_prompt":"Qual eixo em AxisDef do LGS representa este pedal? O XML não identifica os pedais sozinho.", "pedal.axis_none":"Não definido", "pedal.axis_duplicate":"Esse eixo Logitech já está associado a outro pedal.", "pedal.lgs_profile_required":"Selecione o executável do jogo, associe um LGS AxisDef a cada pedal pelo menu do pedal e confirme que o perfil foi importado no Logitech Gaming Software.", "pedal.lgs_updated":"Perfil Logitech atualizado. Reinicie o Logitech Gaming Software e o jogo para aplicar a alteração.",
         "nav.home":"Início", "nav.wheel":"Configurações do volante", "nav.ffb":"Teste de FFB", "nav.input":"Monitor de entradas", "nav.apply":"Aplicar configurações", "nav.theme":"Alternar tema", "nav.about":"Sobre",
         "conn.connecting":"Conectando…", "conn.not_connected":"Desconectado", "conn.connected":"Conectado", "conn.test":"Modo de teste",
         "home.title":"Telemetria ao vivo", "home.steering":"ÂNGULO DO VOLANTE", "home.clutch":"EMBREAGEM", "home.brake":"FREIO", "home.throttle":"ACELERADOR", "home.center":"Centralizar volante", "home.na":"N/D",
         "prof.label":"PERFIL", "prof.auto":"Carregar automaticamente", "prof.add":"Novo perfil", "prof.dup":"Duplicar perfil", "prof.ren":"Renomear perfil", "prof.del":"Excluir perfil", "prof.new_title":"Novo perfil", "prof.new_hint":"Nome do perfil", "prof.ren_title":"Renomear perfil", "prof.del_title":"Excluir perfil", "prof.del_msg":"Excluir o perfil “{0}”? Esta ação não pode ser desfeita.", "prof.name_taken":"Nome já utilizado", "prof.name_taken_body":"Já existe um perfil chamado “{0}”; o nome não foi alterado.", "prof.copy_suffix":" Cópia", "prof.edit":"Editar perfil", "prof.exe":"Executável do jogo", "prof.exe_hint":"Em jogos com inicializador UE, selecione o ...-Shipping.exe real se ele não for encontrado automaticamente.", "prof.logo":"Ícone (de um .exe)", "prof.logo_pick":"Escolher ícone…", "prof.exe_pick":"Escolher jogo…", "prof.name_lbl":"Nome do perfil",
         "dlg.ok":"OK", "dlg.cancel":"Cancelar", "dlg.delete":"Excluir", "ffb.reset_ok":"FFB do driver redefinido", "ffb.reset_ok_body":"Todos os valores de FFB do Registro gravados pelo aplicativo foram removidos.",
         "input.mode_numbers":"Mostrar números dos botões", "input.mode_names":"Mostrar nomes dos botões", "ui.autogame":"Alternar perfil conforme o jogo", "ui.autogame_h":"Aplica o perfil cujo executável do jogo está em execução. Usa Global quando nenhum jogo correspondente estiver aberto.", "game.detected":"Jogo detectado", "game.detected_body":"Perfil {0} aplicado.",
-        "set.startup":"Iniciar com o Windows", "set.startup_h":"Abre o aplicativo quando você entra no Windows. Desativado por padrão.", "set.pedals":"Pedais combinados (acelerador + freio)", "set.pedals_h":"Usa um eixo compartilhado para acelerador e freio em jogos antigos. A configuração vale globalmente para este volante; reinicie os jogos após alterá-la.", "set.updates_sec":"ATUALIZAÇÕES", "set.updates":"Verificar atualizações ao iniciar", "set.updates_h":"Verifica o GitHub uma vez por dia. Nada é instalado automaticamente.", "set.check_now":"Verificar agora", "set.checking":"Verificando…", "upd.available":"Atualização disponível", "upd.available_body":"A versão {0} está disponível.", "upd.open":"Baixar", "upd.current":"Atualizado", "upd.current_body":"Você está usando a versão mais recente.", "upd.failed":"Falha ao verificar atualização", "upd.failed_body":"Não foi possível acessar o GitHub. Verifique sua conexão e tente novamente.",
+        "set.startup":"Iniciar com o Windows", "set.startup_h":"Abre o aplicativo quando você entra no Windows. Desativado por padrão.", "set.pedals":"Pedais combinados (um eixo: acelerador + freio)", "set.pedals_h":"Equivale à opção clássica do driver Logitech para jogos antigos que esperam acelerador e freio no mesmo eixo. A configuração vale globalmente para este volante; reinicie os jogos após alterá-la.", "set.updates_sec":"ATUALIZAÇÕES", "set.updates":"Verificar atualizações ao iniciar", "set.updates_h":"Verifica o GitHub uma vez por dia. Nada é instalado automaticamente.", "set.check_now":"Verificar agora", "set.checking":"Verificando…", "upd.available":"Atualização disponível", "upd.available_body":"A versão {0} está disponível.", "upd.open":"Baixar", "upd.current":"Atualizado", "upd.current_body":"Você está usando a versão mais recente.", "upd.failed":"Falha ao verificar atualização", "upd.failed_body":"Não foi possível acessar o GitHub. Verifique sua conexão e tente novamente.",
         "wheel.title":"Configurações do volante", "wheel.ffb":"Force Feedback", "wheel.overall":"Intensidade geral dos efeitos", "wheel.overall_h":"Use 101% para corrigir a zona morta central do FFB na maioria dos jogos. (Requer reiniciar o jogo)", "wheel.spring":"Efeito de mola", "wheel.spring_h":"Mola controlada pelo driver (recomendado: 0%).", "wheel.damper":"Efeito de amortecimento", "wheel.damper_h":"Amortecimento controlado pelo driver (recomendado: 0%).", "wheel.center_cb":"Ativar mola centralizadora em jogos com FFB", "wheel.center":"Mola centralizadora", "wheel.center_h":"Intensidade de centralização controlada pelo driver.", "wheel.ramp":"Progressão da centralização", "wheel.ramp_h":"Ajusta somente a mola centralizadora — sem efeito quando está em 0. Padrão: 7.", "wheel.steering":"Direção", "wheel.rotation":"Ângulo de rotação", "wheel.rotation_h":"Ângulo máximo de rotação do volante.",
         "ffb.title":"TESTE DE FORCE FEEDBACK", "ffb.subtitle":"Teste o motor de FFB diretamente. O ideal é fazer isso quando nenhum jogo estiver usando o volante.", "ffb.strength":"Intensidade do teste", "ffb.strength_h":"Intensidade usada nos testes Empurrar, Mola e Varredura.", "ffb.push_l":"Empurrar à esquerda", "ffb.push_r":"Empurrar à direita", "ffb.spring":"Mola (centralizar)", "ffb.spring_stop":"Parar mola", "ffb.sweep":"Varredura automática", "ffb.sweep_stop":"Parar varredura", "ffb.advanced":"TESTES AVANÇADOS DO MOTOR", "ffb.pulse_l":"Pulso à esquerda", "ffb.pulse_r":"Pulso à direita", "ffb.vibe_light":"Vibração leve", "ffb.vibe_med":"Vibração média", "ffb.vibe_fast":"Vibração rápida", "ffb.vibe_heavy":"Vibração forte", "ffb.stop":"PARAR TODAS AS FORÇAS", "ffb.reset":"Redefinir FFB do driver", "ffb.reset_h":"Remove todas as configurações de FFB do driver gravadas por este aplicativo.",
         "input.title":"Monitor de entradas", "input.led":"Teste de saudação dos LEDs", "input.wheel":"VOLANTE", "input.shifter":"ALAVANCA DE CÂMBIO", "input.gear":"MARCHA (PADRÃO H)", "input.lpad":"BORBOLETA ESQUERDA", "input.rpad":"BORBOLETA DIREITA", "input.face":"BOTÕES PRINCIPAIS", "input.dpad":"CONTROLE DIRECIONAL", "input.horn":"BUZINA", "input.led_nc":"Volante desconectado.", "input.led_g27":"O teste de LEDs funciona somente no G27 (o DFGT não tem LEDs de RPM).", "input.led_run":"Saudação dos LEDs… (funciona se o driver encaminhar o comando)",
@@ -1134,7 +1257,11 @@ main_window: "ControlHub | None" = None
 
 PROFILE_DEFAULTS = {"angle": 900, "di_gain": 101, "di_spring": 0, "di_damper": 0,
                     "di_center": 0, "di_ramp": DEFAULT_RAMP, "di_persist": False,
-                    "exe_path": "", "logo_exe": "", "lut_file": "", "lut_enabled": False}
+                    "exe_path": "", "logo_exe": "", "lut_file": "", "lut_enabled": False,
+                    "invert_throttle": False, "invert_brake": False, "invert_clutch": False,
+                    "driver_pedal_inversion_configured": False,
+                    "lgs_axis_throttle": "", "lgs_axis_brake": "",
+                    "lgs_axis_clutch": ""}
 
 
 def _active_ramp():
@@ -1831,12 +1958,30 @@ class WheelWidget(QWidget):
 
 
 class PedalBar(QWidget):
-    def __init__(self, label, color):
+    def __init__(self, label, color, pedal, on_invert, on_axis_map):
         super().__init__()
         self.value = 0.0; self.disp = 0.0
         self.label = label; self.color = QColor(color)
+        self.pedal = pedal; self.on_invert = on_invert; self.on_axis_map = on_axis_map
+        self.inverted = False
         self.enabled_axis = True
         self.setMinimumSize(58, 150)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setToolTip(tr("pedal.invert"))
+
+    def mousePressEvent(self, e):
+        if e.button() in (Qt.MouseButton.LeftButton, Qt.MouseButton.RightButton):
+            menu = QMenu(self)
+            action = menu.addAction(tr("pedal.invert"))
+            action.setCheckable(True); action.setChecked(self.inverted)
+            action.triggered.connect(lambda checked: self.on_invert(self.pedal, checked))
+            menu.addSeparator()
+            axis_action = menu.addAction(tr("pedal.axis_map"))
+            axis_action.triggered.connect(lambda: self.on_axis_map(self.pedal))
+            menu.exec(e.globalPosition().toPoint())
+            e.accept()
+            return
+        super().mousePressEvent(e)
 
     def animate(self, factor=0.35):
         new = _lerp(self.disp, self.value, factor)
@@ -2630,16 +2775,24 @@ class PresetsPanel(QWidget):
             self.on_select(n)
 
     def _install_for_profile(self, exe):
-        """Install the DLL only when this profile actually uses a LUT.
+        """Install the DLL when this profile needs force-feedback LUT processing.
 
         Picking a game is not a reason to drop a DLL into its folder: the user
         may just want per-game wheel settings or an icon. The helper is only
-        needed for FFB post-processing, so it follows the LUT switch instead.
+        needed for FFB post-processing.
         """
         if not exe:
             return
         prof = global_settings["profiles"].get(self._selected(), {})
-        if not prof.get("lut_enabled"):
+        if profile_has_driver_pedal_settings(prof):
+            set_logitech_profile_pedal_inversions(exe, prof)
+        if not profile_needs_proxy(prof):
+            still_needed = any(
+                other is not prof and profile_needs_proxy(other)
+                and os.path.normcase(other.get("exe_path", "")) == os.path.normcase(exe)
+                for other in global_settings["profiles"].values())
+            if not still_needed:
+                uninstall_proxy_for(exe)
             return
         install_proxy_ui(exe, self.window())
 
@@ -2712,7 +2865,7 @@ class PresetsPanel(QWidget):
             try:
                 exe = (gone or {}).get("exe_path", "")
                 if exe:
-                    still = any(pp.get("lut_enabled")
+                    still = any(profile_needs_proxy(pp)
                                 and os.path.normcase(pp.get("exe_path", "")) == os.path.normcase(exe)
                                 for pp in global_settings["profiles"].values())
                     if not still:
@@ -2793,9 +2946,9 @@ class TelemetryPanel(QWidget):
         # Leave enough width for translated pedal names such as "ACELERADOR"
         # and "EMBREAGEM"; the bars themselves stay centered in each column.
         prow = QHBoxLayout(); prow.setSpacing(10); prow.setAlignment(Qt.AlignmentFlag.AlignHCenter)
-        self.clutch = PedalBar(tr("home.clutch"), "#60a5fa")
-        self.brake = PedalBar(tr("home.brake"), "#ff6b6b")
-        self.throttle = PedalBar(tr("home.throttle"), "#5dc98a")
+        self.clutch = PedalBar(tr("home.clutch"), "#60a5fa", "clutch", self._on_pedal_invert, self._on_pedal_axis_map)
+        self.brake = PedalBar(tr("home.brake"), "#ff6b6b", "brake", self._on_pedal_invert, self._on_pedal_axis_map)
+        self.throttle = PedalBar(tr("home.throttle"), "#5dc98a", "throttle", self._on_pedal_invert, self._on_pedal_axis_map)
         for wdg in (self.clutch, self.brake, self.throttle):
             wdg.setFixedSize(86, 150)
             prow.addWidget(wdg)
@@ -2805,6 +2958,65 @@ class TelemetryPanel(QWidget):
         self._center_state = {"active": False, "near": 0, "deadline": 0.0}
         self._center_timer = QTimer(self); self._center_timer.timeout.connect(self._center_check)
 
+    def _on_pedal_invert(self, pedal, enabled):
+        if main_window is None:
+            return
+        profile = global_settings["profiles"].setdefault(
+            global_settings["selected_profile"], dict(PROFILE_DEFAULTS))
+        profile["invert_" + pedal] = bool(enabled)
+        profile["driver_pedal_inversion_configured"] = True
+        save_settings()
+        exe = profile.get("exe_path", "")
+        updated = set_logitech_profile_pedal_inversions(exe, profile)
+        if not updated:
+            _defer_infobar("warning", tr("pedal.invert"), tr("pedal.lgs_profile_required"),
+                           duration=5000, position=InfoBarPosition.TOP, parent=main_window)
+        else:
+            _defer_infobar("success", tr("pedal.invert"), tr("pedal.lgs_updated"),
+                           duration=5000, position=InfoBarPosition.TOP, parent=main_window)
+        if profile_needs_proxy(profile):
+            main_window.presets._install_for_profile(exe)
+        else:
+            still_needed = any(
+                other is not profile and profile_needs_proxy(other)
+                and os.path.normcase(other.get("exe_path", "")) == os.path.normcase(exe)
+                for other in global_settings["profiles"].values())
+            if exe and not still_needed:
+                uninstall_proxy_for(exe)
+        self.refresh()
+
+    def _on_pedal_axis_map(self, pedal):
+        if main_window is None:
+            return
+        from PySide6.QtWidgets import QInputDialog
+        profile = global_settings["profiles"].setdefault(
+            global_settings["selected_profile"], dict(PROFILE_DEFAULTS))
+        key = "lgs_axis_" + pedal
+        current = str(profile.get(key, "")).upper()
+        choice, accepted = QInputDialog.getText(
+            main_window, tr("pedal.axis_map"), tr("pedal.axis_prompt"),
+            text=current)
+        if not accepted:
+            return
+        axis = choice.strip().upper()
+        if axis and any(
+                other != pedal and str(profile.get("lgs_axis_" + other, "")).upper() == axis
+                for other in ("throttle", "brake", "clutch")):
+            _defer_infobar("warning", tr("pedal.axis_map"), tr("pedal.axis_duplicate"),
+                           duration=3500, position=InfoBarPosition.TOP, parent=main_window)
+            return
+        profile[key] = axis
+        save_settings()
+        if profile_has_driver_pedal_settings(profile):
+            exe = profile.get("exe_path", "")
+            if not set_logitech_profile_pedal_inversions(exe, profile):
+                _defer_infobar("warning", tr("pedal.axis_map"),
+                               tr("pedal.lgs_profile_required"), duration=5000,
+                               position=InfoBarPosition.TOP, parent=main_window)
+            else:
+                _defer_infobar("success", tr("pedal.axis_map"), tr("pedal.lgs_updated"),
+                               duration=5000, position=InfoBarPosition.TOP, parent=main_window)
+
     def retranslate(self):
         self.hdr._lbl.setText(tr("ui.telemetry"))
         self.center_btn.setText(tr("ui.center"))
@@ -2812,6 +3024,8 @@ class TelemetryPanel(QWidget):
         self.clutch.label = tr("home.clutch"); self.clutch.update()
         self.brake.label = tr("home.brake"); self.brake.update()
         self.throttle.label = tr("home.throttle"); self.throttle.update()
+        for pedal in (self.clutch, self.brake, self.throttle):
+            pedal.setToolTip(tr("pedal.invert"))
 
     def _center_wheel(self):
         if dev is None or main_window is None:
@@ -2853,12 +3067,17 @@ class TelemetryPanel(QWidget):
         self.wheel.animate()
         self.angle.setText(f"{round(self.wheel.angle)}\u00b0")
         self.steerbar.norm = n; self.steerbar.animate()
-        self.throttle.value = state["throttle"] / 255.0
-        self.brake.value = state["brake"] / 255.0
+        prof = global_settings["profiles"].get(global_settings["selected_profile"], {})
+        self.throttle.inverted = bool(prof.get("invert_throttle", False))
+        self.brake.inverted = bool(prof.get("invert_brake", False))
+        self.clutch.inverted = bool(prof.get("invert_clutch", False))
+        self.throttle.value = (255 - state["throttle"] if self.throttle.inverted else state["throttle"]) / 255.0
+        self.brake.value = (255 - state["brake"] if self.brake.inverted else state["brake"]) / 255.0
         has_clutch = active_profile.get("clutch") is not None
         self.clutch.setVisible(has_clutch)
         self.clutch.enabled_axis = has_clutch
-        self.clutch.value = (state["clutch"] / 255.0) if has_clutch else 0.0
+        clutch_value = 255 - state["clutch"] if self.clutch.inverted else state["clutch"]
+        self.clutch.value = (clutch_value / 255.0) if has_clutch else 0.0
         self.throttle.animate(); self.brake.animate(); self.clutch.animate()
 
 
@@ -2896,6 +3115,7 @@ def _slider_block(lay, name, lo, hi, val, suffix, hint) -> _SliderBlock:
 class WheelSettingsTab(QWidget):
     def __init__(self):
         super().__init__()
+        self._guard = False
         prof = global_settings["profiles"].get(global_settings["selected_profile"], {})
         outer = QVBoxLayout(self); outer.setContentsMargins(0, 0, 0, 0)
         scroll = QScrollArea(self); scroll.setWidgetResizable(True)
@@ -2935,11 +3155,23 @@ class WheelSettingsTab(QWidget):
             b.clicked.connect(lambda _, x=d: self.s_rot.setValue(x))
             prow.addWidget(b)
         lay.addLayout(prow)
+        lay.addSpacing(10)
+        self.cb_combined_pedals = CheckBox(tr("set.pedals"))
+        self.cb_combined_pedals.setChecked(bool(global_settings.get("combined_pedals", False)))
+        self.cb_combined_pedals.stateChanged.connect(self._on_combined_pedals)
+        lay.addWidget(self.cb_combined_pedals)
+        self.pedals_hint = CaptionLabel(tr("set.pedals_h"))
+        self.pedals_hint.setWordWrap(True)
+        lay.addWidget(self.pedals_hint)
+        # Keep the driver's legacy combined-axis option in sync at startup.
+        update_combined_pedals(bool(global_settings.get("combined_pedals", False)))
         lay.addStretch(1)
 
     def retranslate(self):
         self.h_ffb._lbl.setText(tr("wheel.sec_ffb")); self.h_steer._lbl.setText(tr("wheel.sec_steer"))
         self.cb_center.setText(tr("wheel.center_cb"))
+        self.cb_combined_pedals.setText(tr("set.pedals"))
+        self.pedals_hint.setText(tr("set.pedals_h"))
         for s, nk, hk in ((self.s_gain, "wheel.overall", "wheel.overall_h"),
                           (self.s_spring, "wheel.spring", "wheel.spring_h"),
                           (self.s_damper, "wheel.damper", "wheel.damper_h"),
@@ -2951,8 +3183,23 @@ class WheelSettingsTab(QWidget):
     def restyle(self):
         for hd in (self.h_ffb, self.h_steer):
             hd._bar.setStyleSheet(f"background:{ACCENT}; border-radius:1px;")
+        muted = "#8a93a6" if isDarkTheme() else "#5c6370"
+        self.pedals_hint.setStyleSheet(f"color:{muted};")
         _restyle_accent(*(sl._val for sl in (self.s_gain, self.s_spring, self.s_damper,
                                              self.s_center, self.s_ramp, self.s_rot)))
+
+    def _on_combined_pedals(self, *_):
+        if self._guard:
+            return
+        enabled = self.cb_combined_pedals.isChecked()
+        if update_combined_pedals(enabled):
+            global_settings["combined_pedals"] = enabled
+            save_settings()
+            return
+        # Keep the visible control truthful if the registry write failed.
+        self._guard = True
+        self.cb_combined_pedals.setChecked(not enabled)
+        self._guard = False
 
     def load_profile(self, name):
         prof = global_settings["profiles"].get(name, {})
@@ -3146,7 +3393,7 @@ class LutTab(QWidget):
             self.empty_hint.setVisible(not getattr(self, "_files", []))
 
     def _publish(self):
-        """Push every profile's LUT choice to the proxy via registry.
+        """Publish LUT settings to the proxy and pedal signs to Logitech LGS.
 
         Each game's proxy now reads a key scoped to its OWN exe (see
         set_active_lut/_proxy_game_key), so this must publish every profile
@@ -3162,6 +3409,8 @@ class LutTab(QWidget):
             fn = pp.get("lut_file", "")
             on = bool(pp.get("lut_enabled", False))
             set_active_lut(os.path.join(_lut_dir(), fn) if (on and fn) else "", exe)
+            if profile_has_driver_pedal_settings(pp):
+                set_logitech_profile_pedal_inversions(exe, pp)
         # Legacy global key: mirror the profile actually shown right now, for
         # any proxy DLL that hasn't been reinstalled since the per-game update.
         prof = self._cur_prof()
@@ -3178,18 +3427,17 @@ class LutTab(QWidget):
         self._sync_proxy()
 
     def _sync_proxy(self):
-        """The helper DLL exists only to apply the LUT, so it follows this
-        switch: installed when post-processing is on, removed when it's off."""
+        """Keep the helper DLL only while force-feedback LUT processing needs it."""
         prof = self._cur_prof()
         exe = prof.get("exe_path", "")
         if not exe:
             return
-        if prof.get("lut_enabled"):
+        if profile_needs_proxy(prof):
             install_proxy_ui(exe, self.window())
             return
         # Don't pull the DLL out from under another profile that still needs it.
         still_needed = any(
-            pp is not prof and pp.get("lut_enabled")
+            pp is not prof and profile_needs_proxy(pp)
             and os.path.normcase(pp.get("exe_path", "")) == os.path.normcase(exe)
             for pp in global_settings["profiles"].values())
         if not still_needed:
@@ -3622,17 +3870,6 @@ class SettingsTab(QWidget):
         scroll.setWidget(host)
 
         self.sec_gen = self._sec(lay, "set.general")
-        self.cb_combined_pedals = CheckBox(tr("set.pedals"))
-        self.cb_combined_pedals.setChecked(bool(global_settings.get("combined_pedals", False)))
-        self.cb_combined_pedals.stateChanged.connect(self._on_combined_pedals)
-        lay.addWidget(self.cb_combined_pedals)
-        lay.addSpacing(2)
-        self.pedals_hint = CaptionLabel(tr("set.pedals_h"))
-        self.pedals_hint.setWordWrap(True); lay.addWidget(self.pedals_hint)
-        # Re-apply on launch so the app preference and the driver's global
-        # setting stay in sync after a reboot or driver reinstall.
-        update_combined_pedals(bool(global_settings.get("combined_pedals", False)))
-        lay.addSpacing(8)
         self.combo_lang = ComboBox(); self.combo_lang.setMinimumWidth(190)
         for code, label in LANG_ORDER:
             self.combo_lang.addItem(label, userData=code)
@@ -3763,18 +4000,6 @@ class SettingsTab(QWidget):
     def _on_updates(self, *_):
         global_settings["check_updates"] = self.cb_upd.isChecked(); save_settings()
 
-    def _on_combined_pedals(self, *_):
-        if self._guard: return
-        enabled = self.cb_combined_pedals.isChecked()
-        if update_combined_pedals(enabled):
-            global_settings["combined_pedals"] = enabled
-            save_settings()
-            return
-        # Keep the visible control truthful if the registry write failed.
-        self._guard = True
-        self.cb_combined_pedals.setChecked(not enabled)
-        self._guard = False
-
     def _check_updates_now(self):
         # self.hub is the ControlHub we were constructed with. self.window()
         # depends on this widget already being parented into the window tree,
@@ -3818,7 +4043,6 @@ class SettingsTab(QWidget):
         for lbl in self._labels:
             lbl.setStyleSheet(f"color:{lbl_color};")
         self.tray_hint.setStyleSheet(f"color:{muted};")
-        self.pedals_hint.setStyleSheet(f"color:{muted};")
         self.scale_hint.setStyleSheet(f"color:{muted};")
         self.test_hint.setStyleSheet(f"color:{muted};")
         self.upd_hint.setStyleSheet(f"color:{muted};")
@@ -3832,7 +4056,6 @@ class SettingsTab(QWidget):
                          (self.row_test, "set.devmode")):
             lbl.setText(tr(key))
         self.cb_tray.setText(tr("set.tray")); self.tray_hint.setText(tr("set.tray_h"))
-        self.cb_combined_pedals.setText(tr("set.pedals")); self.pedals_hint.setText(tr("set.pedals_h"))
         self.cb_startup.setText(tr("set.startup")); self.startup_hint.setText(tr("set.startup_h"))
         self.cb_upd.setText(tr("set.updates")); self.upd_hint.setText(tr("set.updates_h"))
         if self.btn_upd.isEnabled():        # don't clobber "Checking..." mid-flight
@@ -4149,6 +4372,15 @@ class ControlHub(FramelessWindow):
         except Exception: pass
         try: self.settings.lut_tab.load_profile(name)
         except Exception: pass
+        try:
+            prof = global_settings["profiles"].get(name, {})
+            exe = prof.get("exe_path", "")
+            if exe:
+                if profile_has_driver_pedal_settings(prof):
+                    set_logitech_profile_pedal_inversions(exe, prof)
+                self.presets._install_for_profile(exe)
+        except Exception:
+            pass
         # Selecting a preset applies it immediately, exactly as if APPLY was
         # pressed (same wheel writes + same notification). Skipped for the
         # one-time startup sync so launching doesn't fire a warning.
