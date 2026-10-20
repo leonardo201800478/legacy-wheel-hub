@@ -52,6 +52,7 @@ Anti-cheat may not like that. Your call, your risk.
 ## Documentação técnica
 
 - [Arquitetura dos drivers do G27 no Windows, HID, DirectInput, LGS e plano de investigação](docs/LOGITECH_G27_WINDOWS_DRIVER_ARCHITECTURE.md)
+- [Ferramenta de diagnóstico de eixos, pedais e logs do G27](docs/G27_INPUT_DIAGNOSTICS.md)
 
 ## License
 
